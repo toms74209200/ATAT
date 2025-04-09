@@ -89,20 +89,20 @@ https://docs.github.com/ja/apps/creating-github-apps/writing-code-for-a-github-a
   ✓ Logged out of github.com
   ```
 
-## 未検討の項目
+## リポジトリ設定
+- リポジトリ設定は git remote のように以下のサブコマンドで管理する:
+  ```bash
+  # リポジトリの追加
+  $ atat remote add owner/repo
+  ✓ Repository owner/repo has been added
 
-6. リポジトリ設定
-- 同期対象のリポジトリ指定方法
-- 複数プロジェクトでの設定管理
-- リポジトリ設定の保存場所
+  # 現在の設定を表示
+  $ atat remote -v
+  owner/repo
 
-7. パフォーマンスとスケーラビリティ
-- 大量のIssue存在時の処理方法
-- APIレート制限への対応
-- 同期処理の効率化（増分同期等）
-
-8. エラー処理
-- ネットワークエラー時の挙動
-- API制限到達時の対応
-- 同期失敗時のリカバリ方法
-- 不整合発生時の検出と修復
+  # リポジトリの削除
+  $ atat remote remove owner/repo
+  ✓ Repository owner/repo has been removed
+  ```
+- 設定は ~/.config/atat/config.json に保存
+- 複数プロジェクトの場合は、.git/config のように、.atat/config でプロジェクト固有の設定を上書き可能
