@@ -25,6 +25,9 @@ jobs:
       - name: Run tests
         if: ${{ !inputs.with-coverage }}
         run: cargo test
+      - name: Install llvm-cov
+        if: ${{ inputs.with-coverage }}
+        run: cargo install cargo-llvm-cov
       - name: Run tests with coverage
         if: ${{ inputs.with-coverage }}
         run: cargo test && cargo llvm-cov --ignore-filename-regex main --output-path coverage.txt
