@@ -24,8 +24,7 @@ jobs:
             echo "Error: coverage.txt file not found"
             exit 1
           fi
-          line_coverage=$(grep "TOTAL" coverage.txt | awk '{print $9}' | tr -d '%')
-          line_coverage=$(echo $line_coverage | tr -d '[:space:]')
+          line_coverage=$(grep "TOTAL" coverage.txt | awk '{print $10}' | tr -d '%')
           echo "coverage=$line_coverage" >> $GITHUB_OUTPUT
       - name: Generate coverage report
         run: |
