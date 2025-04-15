@@ -33,13 +33,6 @@ pub struct AccessTokenResponse {
     pub error: Option<String>,
 }
 
-/// Generate request parameters for device code
-pub fn create_device_code_request(client_id: &str) -> DeviceCodeRequest {
-    DeviceCodeRequest {
-        client_id: client_id.to_string(),
-    }
-}
-
 /// Generate request parameters for access token
 pub fn create_access_token_request(client_id: &str, device_code: &str) -> AccessTokenRequest {
     AccessTokenRequest {
@@ -95,13 +88,6 @@ pub enum PollingResult {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn test_create_device_code_request() {
-        let client_id = "test_client_id";
-        let request = create_device_code_request(client_id);
-        assert_eq!(request.client_id, client_id);
-    }
 
     #[test]
     fn test_create_access_token_request() {
