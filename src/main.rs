@@ -18,7 +18,7 @@ async fn main() -> Result<()> {
         .build()
         .context("Failed to create HTTP client")?;
 
-    let device_code_res = request_device_code(&client, &CLIENT_ID)
+    let device_code_res = request_device_code(&client, CLIENT_ID)
         .await
         .context("Failed to get device code")?;
 

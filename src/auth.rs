@@ -8,6 +8,7 @@ pub struct DeviceCodeRequest {
 
 /// Response from device code request
 #[derive(Deserialize, Debug)]
+#[allow(dead_code)]
 pub struct DeviceCodeResponse {
     pub device_code: String,
     pub user_code: String,
@@ -25,6 +26,7 @@ pub struct AccessTokenRequest {
 }
 
 /// Response from access token request
+#[allow(dead_code)]
 #[derive(Deserialize, Debug)]
 pub struct AccessTokenResponse {
     pub access_token: Option<String>,
@@ -34,6 +36,7 @@ pub struct AccessTokenResponse {
 }
 
 /// Generate request parameters for access token
+#[allow(dead_code)]
 pub fn create_access_token_request(client_id: &str, device_code: &str) -> AccessTokenRequest {
     AccessTokenRequest {
         client_id: client_id.to_string(),
@@ -47,6 +50,7 @@ pub fn create_access_token_request(client_id: &str, device_code: &str) -> Access
 /// This function determines the next action based on the previous polling result
 /// Returns the token if successful, wait time if more waiting is needed,
 /// or an error message if an error occurred
+#[allow(dead_code)]
 pub fn handle_polling_response(response: &AccessTokenResponse) -> PollingResult {
     if let Some(token) = &response.access_token {
         return PollingResult::Success(token.clone());
