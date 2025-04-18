@@ -1,5 +1,3 @@
-mod auth;
-
 /// GitHub API endpoints
 mod endpoints {
     pub const DEVICE_CODE: &str = "https://github.com/login/device/code";
@@ -30,6 +28,12 @@ async fn main() -> anyhow::Result<()> {
         poll_for_token(&client, &device_code_res).await,
         "Failed to poll for access token",
     )?;
+
+    let storage = atat::storage::FileTokenStorage::new();
+    anyhow::Context::context(
+        atat::storage::TokenStorage::save(&storage, &access_token),
+        "Failed to save token",
+    )?;
     println!("✓ Authentication complete");
 
     Ok(())
@@ -38,7 +42,7 @@ async fn main() -> anyhow::Result<()> {
 async fn request_device_code(
     client: &reqwest::Client,
     client_id: &str,
-) -> anyhow::Result<auth::DeviceCodeResponse> {
+) -> anyhow::Result<atat::auth::DeviceCodeResponse> {
     let response = client
         .post(endpoints::DEVICE_CODE)
         .query(&[("client_id", client_id)])
@@ -53,13 +57,13 @@ async fn request_device_code(
         ));
     }
 
-    let device_code_response = response.json::<auth::DeviceCodeResponse>().await?;
+    let device_code_response = response.json::<atat::auth::DeviceCodeResponse>().await?;
     Ok(device_code_response)
 }
 
 async fn poll_for_token(
     client: &reqwest::Client,
-    device_code: &auth::DeviceCodeResponse,
+    device_code: &atat::auth::DeviceCodeResponse,
 ) -> anyhow::Result<String> {
     let mut interval = std::time::Duration::from_secs(device_code.interval);
 
@@ -76,14 +80,14 @@ async fn poll_for_token(
             .await?;
 
         if response.status().is_success() {
-            let token_response = response.json::<auth::AccessTokenResponse>().await?;
-            match auth::handle_polling_response(&token_response) {
-                auth::PollingResult::Success(token) => return Ok(token),
-                auth::PollingResult::Wait(Some(new_interval)) => {
+            let token_response = response.json::<atat::auth::AccessTokenResponse>().await?;
+            match atat::auth::handle_polling_response(&token_response) {
+                atat::auth::PollingResult::Success(token) => return Ok(token),
+                atat::auth::PollingResult::Wait(Some(new_interval)) => {
                     interval = std::time::Duration::from_secs(new_interval);
                 }
-                auth::PollingResult::Wait(None) => (),
-                auth::PollingResult::Error(err) => return Err(anyhow::anyhow!(err)),
+                atat::auth::PollingResult::Wait(None) => (),
+                atat::auth::PollingResult::Error(err) => return Err(anyhow::anyhow!(err)),
             }
         } else {
             return Err(anyhow::anyhow!("API request error: {}", response.status()));
