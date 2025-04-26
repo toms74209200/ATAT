@@ -22,3 +22,9 @@ jobs:
     uses: ./.github/workflows/job-coverage.yml
     with:
       coverage-threshold: 80
+  medium-test:
+    needs: 
+      - small-test
+    uses: ./.github/workflows/job-test-medium.yml
+    secrets:
+      CLIENT_ID: ${{ secrets.CLIENT_ID }}

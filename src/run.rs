@@ -10,7 +10,7 @@ mod endpoints {
     pub const USER: &str = "https://api.github.com/user";
 }
 
-const CLIENT_ID: &str = std::env!("GITHUB_CLIENT_ID");
+const CLIENT_ID: &str = std::env!("CLIENT_ID");
 const DEFAULT_POLL_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(5 * 60);
 
 pub async fn run(
