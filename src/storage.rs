@@ -1,7 +1,7 @@
 use anyhow::{Context, Result};
 use std::fs::{self, File};
 use std::io::Write;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 /// Abstract token persistence interface
 pub trait TokenStorage {
@@ -60,5 +60,17 @@ impl TokenStorage for FileTokenStorage {
             fs::remove_file(&self.path).context("Failed to delete token file")?;
         }
         Ok(())
+    }
+}
+
+/// Reads the content of the file at the specified path into a byte vector.
+///
+/// - Returns `Ok(Vec::new())` if the file does not exist.
+/// - Returns an `Err` if any other error occurs during reading (e.g., permission denied).
+pub fn read_file_bytes(path: &Path) -> Result<Vec<u8>> {
+    match fs::read(path) {
+        Ok(content) => Ok(content),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(Vec::new()),
+        Err(e) => Err(e).context(format!("Failed to read file: {:?}", path)),
     }
 }
