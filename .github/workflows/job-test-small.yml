@@ -28,11 +28,11 @@ jobs:
       - name: Install llvm-cov
         if: ${{ inputs.with-coverage }}
         run: cargo install cargo-llvm-cov
+      - name: Debug ignore pattern
+        if: ${{ inputs.with-coverage }}
+        run: |
+          echo "Ignore pattern: $(grep -Ev '^\\s*(#|$)' scripts/coverage_ignore.txt | sed 's#^#src/#; s#$#.rs#' | paste -sd '|' -)"
       - name: Run tests with coverage
         if: ${{ inputs.with-coverage }}
-        run: cargo llvm-cov --lib --ignore-filename-regex `(grep -Ev '^\s*(#|$)' scripts/coverage_ignore.txt | paste -sd '|' -)` --output-path coverage.txt
-      - if: ${{ inputs.with-coverage }}
-        uses: actions/upload-artifact@v4
-        with:
-          name: coverage-report
-          path: coverage.txt
+        run: cargo llvm-cov --lib --ignore-filename-regex `(grep -Ev '^\\s*(#|$)' scripts/coverage_ignore.txt | sed 's#^#src/#; s#$#.rs#' | paste -sd '|' -)`
+
