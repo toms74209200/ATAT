@@ -1,4 +1,6 @@
+use crate::config;
 use anyhow::{Context, Result};
+use std::env;
 use std::fs::{self, File};
 use std::io::Write;
 use std::path::{Path, PathBuf};
@@ -73,4 +75,21 @@ pub fn read_file_bytes(path: &Path) -> Result<Vec<u8>> {
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(Vec::new()),
         Err(e) => Err(e).context(format!("Failed to read file: {:?}", path)),
     }
+}
+
+/// Reads the project-specific configuration file (.atat/config.json) from the current directory.
+///
+/// - Returns `Ok(Vec<u8>)` containing the file content.
+/// - Returns `Ok(Vec::new())` if the file does not exist.
+/// - Returns an `Err` if the current directory cannot be determined or if any other read error occurs.
+pub fn read_project_config() -> Result<Vec<u8>> {
+    let current_dir = env::current_dir().context("Failed to get current directory")?;
+    let config_path = current_dir
+        .join(config::PROJECT_CONFIG_DIR)
+        .join(config::PROJECT_CONFIG_FILENAME);
+
+    read_file_bytes(&config_path).context(format!(
+        "Failed to read project config file at {:?}",
+        config_path
+    ))
 }
