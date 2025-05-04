@@ -21,6 +21,11 @@ impl ConfigKey {
     }
 }
 
+/// Filename for the project-specific configuration within the .atat directory.
+pub const PROJECT_CONFIG_FILENAME: &str = "config.json";
+/// Directory name for project-specific configuration.
+pub const PROJECT_CONFIG_DIR: &str = ".atat";
+
 /// Parses a JSON configuration file content into a map of configuration values.
 ///
 /// Expects `content` to be a byte slice representing either:
@@ -39,11 +44,6 @@ pub fn parse_config(content: &[u8]) -> Result<HashMap<ConfigKey, Value>> {
     let value: Value = serde_json::from_slice(content).context("Failed to parse config JSON")?;
 
     let mut config_map = HashMap::new();
-
-    if let Value::Array(_) = &value {
-        config_map.insert(ConfigKey::Repositories, value);
-        return Ok(config_map);
-    }
 
     if let Value::Object(map) = &value {
         for key in ConfigKey::all() {
@@ -65,16 +65,6 @@ mod tests {
     use serde_json::json;
 
     #[test]
-    fn simple_array_works() {
-        let json = r#"["owner/repo1", "another/repo2"]"#.as_bytes();
-        let config = parse_config(json).unwrap();
-        assert!(config.contains_key(&ConfigKey::Repositories));
-
-        let repos = config.get(&ConfigKey::Repositories).unwrap();
-        assert_eq!(repos, &json!(["owner/repo1", "another/repo2"]));
-    }
-
-    #[test]
     fn object_with_key_works() {
         let json = r#"{"repositories": ["owner/repo1", "another/repo2"]}"#.as_bytes();
         let config = parse_config(json).unwrap();
@@ -82,16 +72,6 @@ mod tests {
 
         let repos = config.get(&ConfigKey::Repositories).unwrap();
         assert_eq!(repos, &json!(["owner/repo1", "another/repo2"]));
-    }
-
-    #[test]
-    fn empty_array_works() {
-        let json = r#"[]"#.as_bytes();
-        let config = parse_config(json).unwrap();
-        assert!(config.contains_key(&ConfigKey::Repositories));
-
-        let repos = config.get(&ConfigKey::Repositories).unwrap();
-        assert_eq!(repos, &json!([]));
     }
 
     #[test]
