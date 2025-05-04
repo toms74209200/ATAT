@@ -97,7 +97,7 @@ https://docs.github.com/ja/apps/creating-github-apps/writing-code-for-a-github-a
   ✓ Repository owner/repo has been added
 
   # 現在の設定を表示
-  $ atat remote -v
+  $ atat remote
   owner/repo
 
   # リポジトリの削除

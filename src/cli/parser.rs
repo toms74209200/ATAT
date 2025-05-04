@@ -3,6 +3,7 @@
 pub enum Command {
     Login,
     Whoami,
+    Remote,
     Help,
     Unknown(String),
 }
@@ -22,6 +23,7 @@ pub fn parse_args(args: &[String]) -> Command {
     match args[1].as_str() {
         "login" => Command::Login,
         "whoami" => Command::Whoami,
+        "remote" => Command::Remote,
         "help" => Command::Help,
         cmd => Command::Unknown(cmd.to_string()),
     }
@@ -41,6 +43,12 @@ mod tests {
     fn test_parse_whoami_command() {
         let args = vec!["program".to_string(), "whoami".to_string()];
         assert_eq!(parse_args(&args), Command::Whoami);
+    }
+
+    #[test]
+    fn test_parse_remote_command() {
+        let args = vec!["program".to_string(), "remote".to_string()];
+        assert_eq!(parse_args(&args), Command::Remote);
     }
 
     #[test]
