@@ -1,5 +1,6 @@
 use crate::auth;
 use crate::cli;
+use crate::config;
 use crate::output;
 use crate::storage;
 use crate::whoami;
@@ -83,6 +84,33 @@ pub async fn run(
                 "Failed to save token",
             )?;
             output::println("✓ Authentication complete", &mut stdout_additional)?;
+        }
+        cli::parser::Command::Remote => {
+            let content = anyhow::Context::context(
+                storage::read_project_config(),
+                "Failed to read project configuration",
+            )?;
+
+            match config::parse_config(&content) {
+                Ok(config_map) => {
+                    if let Some(serde_json::Value::Array(repos)) =
+                        config_map.get(&config::ConfigKey::Repositories)
+                    {
+                        for repo_val in repos {
+                            if let serde_json::Value::String(repo_str) = repo_val {
+                                output::println(repo_str, &mut stdout_additional)?;
+                            } else {
+                                eprintln!("Warning: Non-string value found in repositories list.");
+                            }
+                        }
+                    }
+                }
+                Err(e) => {
+                    if !content.is_empty() {
+                        eprintln!("Warning: Could not parse project config file: {}", e);
+                    }
+                }
+            }
         }
         _ => {
             output::println(
