@@ -12,3 +12,4 @@
 - [x] GitHub Apps チュートリアル完了 (`whoami` コマンド実装含む) (2025-04-24)
 - [x] login コマンドの feature ファイルを作成する
 - [x] login コマンドの実装
+- [x] `remote` コマンドの表示機能の実装
