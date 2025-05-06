@@ -20,6 +20,6 @@ jobs:
             target
           key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
       - name: Run tests
-        run: cargo test --test acceptance
+        run: cargo test --test acceptance -- -c 1
         env:
           CLIENT_ID: ${{ secrets.CLIENT_ID }}
