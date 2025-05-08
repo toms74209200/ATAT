@@ -85,7 +85,7 @@ pub async fn run(
             )?;
             output::println("✓ Authentication complete", &mut stdout_additional)?;
         }
-        cli::parser::Command::Remote => {
+        cli::parser::Command::RemoteList => {
             let content = anyhow::Context::context(
                 storage::read_project_config(),
                 "Failed to read project configuration",
@@ -111,6 +111,9 @@ pub async fn run(
                     }
                 }
             }
+        }
+        cli::parser::Command::RemoteAdd { repo: _ } => {
+            unimplemented!("not implemented yet");
         }
         _ => {
             output::println(
