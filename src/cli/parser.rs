@@ -28,40 +28,39 @@ pub fn parse_args(args: &[String]) -> Command {
         },
         3 => match (args[1].as_str(), args[2].as_str()) {
             ("remote", "add") => Command::Unknown(
-                "Error: Missing repository argument. Usage: atat remote add <owner>/<repo>"
-                    .to_string(),
+                "Missing repository argument. Usage: atat remote add <owner>/<repo>".to_string(),
             ),
             ("remote", sub_cmd) => Command::Unknown(format!("remote {}", sub_cmd)),
             (cmd, _) => Command::Unknown(cmd.to_string()),
         },
-        _ => {
-            match (args[1].as_str(), args[2].as_str()) {
-                ("remote", "add") => {
-                    if args.len() >= 4 {
-                        let repo_arg = &args[3];
-                        let parts: Vec<&str> = repo_arg.split('/').collect();
-                        if parts.len() == 2
-                            && !parts[0].is_empty()
-                            && !parts[1].is_empty()
-                            && !parts[0].contains('/')
-                            && !parts[1].contains('/')
-                        {
-                            Command::RemoteAdd {
-                                repo: repo_arg.clone(),
-                            }
-                        } else {
-                            Command::Unknown(
-                                "Error: Invalid repository format. Please use <owner>/<repo>."
-                                    .to_string(),
-                            )
+        _ => match (args[1].as_str(), args[2].as_str()) {
+            ("remote", "add") => {
+                if args.len() >= 4 {
+                    let repo_arg = &args[3];
+                    let parts: Vec<&str> = repo_arg.split('/').collect();
+                    if parts.len() == 2
+                        && !parts[0].is_empty()
+                        && !parts[1].is_empty()
+                        && !parts[0].contains('/')
+                        && !parts[1].contains('/')
+                    {
+                        Command::RemoteAdd {
+                            repo: repo_arg.clone(),
                         }
                     } else {
-                        Command::Unknown("Error: Missing repository argument. Usage: atat remote add <owner>/<repo>".to_string())
+                        Command::Unknown(
+                            "Invalid repository format. Please use <owner>/<repo>.".to_string(),
+                        )
                     }
+                } else {
+                    Command::Unknown(
+                        "Missing repository argument. Usage: atat remote add <owner>/<repo>"
+                            .to_string(),
+                    )
                 }
-                (cmd1, cmd2) => Command::Unknown(format!("{} {}", cmd1, cmd2)),
             }
-        }
+            (cmd1, cmd2) => Command::Unknown(format!("{} {}", cmd1, cmd2)),
+        },
     }
 }
 
@@ -113,8 +112,7 @@ mod tests {
         assert_eq!(
             parse_args(&args),
             Command::Unknown(
-                "Error: Missing repository argument. Usage: atat remote add <owner>/<repo>"
-                    .to_string()
+                "Missing repository argument. Usage: atat remote add <owner>/<repo>".to_string()
             )
         );
     }
@@ -187,9 +185,7 @@ mod tests {
         ];
         assert_eq!(
             parse_args(&args),
-            Command::Unknown(
-                "Error: Invalid repository format. Please use <owner>/<repo>.".to_string()
-            )
+            Command::Unknown("Invalid repository format. Please use <owner>/<repo>.".to_string())
         );
     }
 
@@ -203,9 +199,7 @@ mod tests {
         ];
         assert_eq!(
             parse_args(&args),
-            Command::Unknown(
-                "Error: Invalid repository format. Please use <owner>/<repo>.".to_string()
-            )
+            Command::Unknown("Invalid repository format. Please use <owner>/<repo>.".to_string())
         );
     }
 
@@ -219,9 +213,7 @@ mod tests {
         ];
         assert_eq!(
             parse_args(&args),
-            Command::Unknown(
-                "Error: Invalid repository format. Please use <owner>/<repo>.".to_string()
-            )
+            Command::Unknown("Invalid repository format. Please use <owner>/<repo>.".to_string())
         );
     }
 
@@ -235,9 +227,7 @@ mod tests {
         ];
         assert_eq!(
             parse_args(&args),
-            Command::Unknown(
-                "Error: Invalid repository format. Please use <owner>/<repo>.".to_string()
-            )
+            Command::Unknown("Invalid repository format. Please use <owner>/<repo>.".to_string())
         );
     }
 
@@ -251,9 +241,7 @@ mod tests {
         ];
         assert_eq!(
             parse_args(&args),
-            Command::Unknown(
-                "Error: Invalid repository format. Please use <owner>/<repo>.".to_string()
-            )
+            Command::Unknown("Invalid repository format. Please use <owner>/<repo>.".to_string())
         );
     }
 }
