@@ -27,18 +27,36 @@ pub fn parse_args(args: &[String]) -> Command {
             cmd => Command::Unknown(cmd.to_string()),
         },
         3 => match (args[1].as_str(), args[2].as_str()) {
-            ("remote", "add") => Command::Unknown("remote add <repository>".to_string()),
+            ("remote", "add") => Command::Unknown(
+                "Missing repository argument. Usage: atat remote add <owner>/<repo>".to_string(),
+            ),
             ("remote", sub_cmd) => Command::Unknown(format!("remote {}", sub_cmd)),
             (cmd, _) => Command::Unknown(cmd.to_string()),
         },
         _ => match (args[1].as_str(), args[2].as_str()) {
             ("remote", "add") => {
                 if args.len() >= 4 {
-                    Command::RemoteAdd {
-                        repo: args[3].clone(),
+                    let repo_arg = &args[3];
+                    let parts: Vec<&str> = repo_arg.split('/').collect();
+                    if parts.len() == 2
+                        && !parts[0].is_empty()
+                        && !parts[1].is_empty()
+                        && !parts[0].contains('/')
+                        && !parts[1].contains('/')
+                    {
+                        Command::RemoteAdd {
+                            repo: repo_arg.clone(),
+                        }
+                    } else {
+                        Command::Unknown(
+                            "Invalid repository format. Please use <owner>/<repo>.".to_string(),
+                        )
                     }
                 } else {
-                    Command::Unknown("remote add <repository>".to_string())
+                    Command::Unknown(
+                        "Missing repository argument. Usage: atat remote add <owner>/<repo>"
+                            .to_string(),
+                    )
                 }
             }
             (cmd1, cmd2) => Command::Unknown(format!("{} {}", cmd1, cmd2)),
@@ -93,7 +111,9 @@ mod tests {
         ];
         assert_eq!(
             parse_args(&args),
-            Command::Unknown("remote add <repository>".to_string())
+            Command::Unknown(
+                "Missing repository argument. Usage: atat remote add <owner>/<repo>".to_string()
+            )
         );
     }
 
@@ -153,5 +173,75 @@ mod tests {
     fn test_parse_unknown_command() {
         let args = vec!["program".to_string(), "unknown".to_string()];
         assert_eq!(parse_args(&args), Command::Unknown("unknown".to_string()));
+    }
+
+    #[test]
+    fn test_parse_remote_add_invalid_format_no_slash() {
+        let args = vec![
+            "program".to_string(),
+            "remote".to_string(),
+            "add".to_string(),
+            "ownerrepo".to_string(),
+        ];
+        assert_eq!(
+            parse_args(&args),
+            Command::Unknown("Invalid repository format. Please use <owner>/<repo>.".to_string())
+        );
+    }
+
+    #[test]
+    fn test_parse_remote_add_invalid_format_empty_owner() {
+        let args = vec![
+            "program".to_string(),
+            "remote".to_string(),
+            "add".to_string(),
+            "/repo".to_string(),
+        ];
+        assert_eq!(
+            parse_args(&args),
+            Command::Unknown("Invalid repository format. Please use <owner>/<repo>.".to_string())
+        );
+    }
+
+    #[test]
+    fn test_parse_remote_add_invalid_format_empty_repo() {
+        let args = vec![
+            "program".to_string(),
+            "remote".to_string(),
+            "add".to_string(),
+            "owner/".to_string(),
+        ];
+        assert_eq!(
+            parse_args(&args),
+            Command::Unknown("Invalid repository format. Please use <owner>/<repo>.".to_string())
+        );
+    }
+
+    #[test]
+    fn test_parse_remote_add_invalid_format_too_many_slashes() {
+        let args = vec![
+            "program".to_string(),
+            "remote".to_string(),
+            "add".to_string(),
+            "owner/repo/extra".to_string(),
+        ];
+        assert_eq!(
+            parse_args(&args),
+            Command::Unknown("Invalid repository format. Please use <owner>/<repo>.".to_string())
+        );
+    }
+
+    #[test]
+    fn test_parse_remote_add_invalid_format_owner_contains_slash() {
+        let args = vec![
+            "program".to_string(),
+            "remote".to_string(),
+            "add".to_string(),
+            "ow/ner/repo".to_string(),
+        ];
+        assert_eq!(
+            parse_args(&args),
+            Command::Unknown("Invalid repository format. Please use <owner>/<repo>.".to_string())
+        );
     }
 }

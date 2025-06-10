@@ -1,3 +1,5 @@
+use anyhow::anyhow;
+
 use crate::auth;
 use crate::cli;
 use crate::config;
@@ -9,6 +11,7 @@ mod endpoints {
     pub const DEVICE_CODE: &str = "https://github.com/login/device/code";
     pub const ACCESS_TOKEN: &str = "https://github.com/login/oauth/access_token";
     pub const USER: &str = "https://api.github.com/user";
+    pub const REPO_DETAILS: &str = "https://api.github.com/repos";
 }
 
 const CLIENT_ID: &str = std::env!("CLIENT_ID");
@@ -86,12 +89,12 @@ pub async fn run(
             output::println("✓ Authentication complete", &mut stdout_additional)?;
         }
         cli::parser::Command::RemoteList => {
-            let content = anyhow::Context::context(
-                storage::read_project_config(),
+            let config_storage = anyhow::Context::context(
+                storage::LocalConfigStorage::new(),
                 "Failed to read project configuration",
             )?;
 
-            match config::parse_config(&content) {
+            match storage::ConfigStorage::load_config(&config_storage) {
                 Ok(config_map) => {
                     if let Some(serde_json::Value::Array(repos)) =
                         config_map.get(&config::ConfigKey::Repositories)
@@ -99,27 +102,70 @@ pub async fn run(
                         for repo_val in repos {
                             if let serde_json::Value::String(repo_str) = repo_val {
                                 output::println(repo_str, &mut stdout_additional)?;
-                            } else {
-                                eprintln!("Warning: Non-string value found in repositories list.");
                             }
                         }
                     }
                 }
                 Err(e) => {
-                    if !content.is_empty() {
-                        eprintln!("Warning: Could not parse project config file: {}", e);
-                    }
+                    return Err(anyhow::anyhow!("Error loading project config: {}", e));
                 }
             }
         }
-        cli::parser::Command::RemoteAdd { repo: _ } => {
-            unimplemented!("not implemented yet");
+        cli::parser::Command::RemoteAdd { repo } => {
+            let config_storage = match storage::LocalConfigStorage::new() {
+                Ok(storage) => storage,
+                Err(e) => {
+                    return Err(anyhow::anyhow!("Error initializing config storage: {}", e));
+                }
+            };
+
+            let mut config_map =
+                storage::ConfigStorage::load_config(&config_storage).unwrap_or_default();
+
+            let repo_list_val = config_map
+                .entry(config::ConfigKey::Repositories)
+                .or_insert_with(|| serde_json::json!([]));
+
+            if let Some(repos_array) = repo_list_val.as_array_mut() {
+                let new_repo_val = serde_json::json!(repo.clone());
+                if !repos_array.contains(&new_repo_val) {
+                    let client = reqwest::Client::builder()
+                        .timeout(std::time::Duration::from_secs(30))
+                        .build()?;
+
+                    let token_storage = storage::FileTokenStorage::new();
+                    let token = storage::TokenStorage::load(&token_storage).unwrap_or(None);
+
+                    match check_repo_exists(&client, &repo, token.as_deref()).await {
+                        Ok(true) => {
+                            repos_array.push(new_repo_val);
+                            storage::ConfigStorage::save_config(&config_storage, &config_map)
+                                .map_err(|e| {
+                                    anyhow::anyhow!("Error saving project config: {}", e)
+                                })?;
+                        }
+                        Ok(false) => {
+                            return Err(anyhow!(
+                                "Repository {} not found or not accessible.",
+                                repo
+                            ));
+                        }
+                        Err(e) => {
+                            return Err(anyhow!("Failed to check repository {}: {}", repo, e));
+                        }
+                    }
+                }
+            } else {
+                return Err(anyhow::anyhow!(
+                    "'repositories' key in config is not an array. Cannot add repository."
+                ));
+            }
         }
+        cli::parser::Command::Unknown(message) => return Err(anyhow!(message)),
         _ => {
-            output::println(
-                "Invalid command or arguments. Use --help for usage.",
-                &mut stdout_additional,
-            )?;
+            return Err(anyhow::anyhow!(
+                "Invalid command or arguments. Use --help for usage."
+            ));
         }
     }
     Ok(())
@@ -189,5 +235,30 @@ async fn poll_for_token(
         }
 
         tokio::time::sleep(interval).await;
+    }
+}
+
+async fn check_repo_exists(
+    client: &reqwest::Client,
+    repo_name: &str,
+    token: Option<&str>,
+) -> anyhow::Result<bool> {
+    let url = format!("{}/{}", endpoints::REPO_DETAILS, repo_name);
+    let mut request_builder = client.get(&url).header("User-Agent", "atat-cli");
+
+    if let Some(t) = token {
+        request_builder = request_builder.bearer_auth(t);
+    }
+
+    let response = request_builder.send().await?;
+
+    match response.status() {
+        reqwest::StatusCode::OK => Ok(true),
+        reqwest::StatusCode::NOT_FOUND => Ok(false),
+        reqwest::StatusCode::FORBIDDEN => Ok(false),
+        status => Err(anyhow::anyhow!(
+            "Failed to check repository: GitHub API returned HTTP {}",
+            status
+        )),
     }
 }
