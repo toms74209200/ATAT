@@ -23,3 +23,5 @@ jobs:
         run: cargo test --test acceptance -- -c 1
         env:
           CLIENT_ID: ${{ secrets.CLIENT_ID }}
+          PRIVATE_KEY : ${{ secrets.PRIVATE_KEY }}
+          TEST_GITHUB_TARGET_OWNER: ${{ github.actor }}
