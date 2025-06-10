@@ -119,10 +119,8 @@ pub async fn run(
                 }
             };
 
-            let mut config_map = match storage::ConfigStorage::load_config(&config_storage) {
-                Ok(map) => map,
-                Err(_) => std::collections::HashMap::new(),
-            };
+            let mut config_map =
+                storage::ConfigStorage::load_config(&config_storage).unwrap_or_default();
 
             let repo_list_val = config_map
                 .entry(config::ConfigKey::Repositories)

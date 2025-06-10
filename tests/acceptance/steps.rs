@@ -183,7 +183,7 @@ async fn then_output_should_be(world: &mut AtatWorld, expected_output: String) {
         output.trim_end()
     );
     assert!(
-        world.command_status.map_or(false, |s| s.success()),
+        world.command_status.is_some_and(|s| s.success()),
         "Command failed with status: {:?}",
         world.command_status
     );
@@ -200,7 +200,7 @@ async fn then_error_should_be(world: &mut AtatWorld, expected_output: String) {
         output.trim_end()
     );
     assert!(
-        world.command_status.map_or(true, |s| !s.success()),
+        world.command_status.is_none_or(|s| !s.success()),
         "Command should have failed but succeeded with status: {:?}",
         world.command_status
     );
@@ -215,7 +215,7 @@ async fn then_output_should_be_empty(world: &mut AtatWorld) {
         output
     );
     assert!(
-        world.command_status.map_or(false, |s| s.success()),
+        world.command_status.is_some_and(|s| s.success()),
         "Command failed with status: {:?}",
         world.command_status
     );
