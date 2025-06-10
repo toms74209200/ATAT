@@ -28,3 +28,4 @@ jobs:
     uses: ./.github/workflows/job-test-medium.yml
     secrets:
       CLIENT_ID: ${{ secrets.CLIENT_ID }}
+      PRIVATE_KEY: ${{ secrets.PRIVATE_KEY }}
