@@ -317,6 +317,28 @@ async fn when_run_atat_remote_add(world: &mut AtatWorld, repo_name: String) {
     world.command_status = Some(output.status);
 }
 
+#[when(regex = r#"^I run `atat remote remove ([^`"]*)`$"#)]
+async fn when_run_atat_remote_remove(world: &mut AtatWorld, repo_name: String) {
+    let target_dir = std::env::var("CARGO_TARGET_DIR").unwrap_or_else(|_| "target".to_string());
+    let profile = if cfg!(debug_assertions) {
+        "debug"
+    } else {
+        "release"
+    };
+    let atat_path = std::path::PathBuf::from(&target_dir)
+        .join(profile)
+        .join("atat");
+    let output = std::process::Command::new(&atat_path)
+        .arg("remote")
+        .arg("remove")
+        .arg(repo_name)
+        .output()
+        .unwrap_or_else(|e| panic!("Failed to execute atat command at {:?}: {}", atat_path, e));
+
+    world.captured_output = [output.stdout, output.stderr].concat();
+    world.command_status = Some(output.status);
+}
+
 #[then(regex = r#"^the config file should contain "([^"]*)"$"#)]
 async fn then_config_file_should_contain(_world: &mut AtatWorld, expected_repo: String) {
     let current_dir = env::current_dir().expect("Failed to get current directory for test.");
