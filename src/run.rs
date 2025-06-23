@@ -161,6 +161,41 @@ pub async fn run(
                 ));
             }
         }
+        cli::parser::Command::RemoteRemove { repo } => {
+            let config_storage = match storage::LocalConfigStorage::new() {
+                Ok(storage) => storage,
+                Err(e) => {
+                    return Err(anyhow::anyhow!("Error initializing config storage: {}", e));
+                }
+            };
+
+            let config_map =
+                storage::ConfigStorage::load_config(&config_storage).unwrap_or_default();
+
+            let new_config = if let Some(serde_json::Value::Array(repos)) =
+                config_map.get(&config::ConfigKey::Repositories)
+            {
+                let repo_json = serde_json::json!(repo.clone());
+                let filtered_repos: Vec<serde_json::Value> =
+                    repos.iter().filter(|&r| r != &repo_json).cloned().collect();
+
+                if filtered_repos.is_empty() {
+                    std::collections::HashMap::new()
+                } else {
+                    let mut updates = std::collections::HashMap::new();
+                    updates.insert(
+                        config::ConfigKey::Repositories,
+                        serde_json::json!(filtered_repos),
+                    );
+                    config::update_config(&config_map, &updates)
+                }
+            } else {
+                config_map
+            };
+
+            storage::ConfigStorage::save_config(&config_storage, &new_config)
+                .map_err(|e| anyhow::anyhow!("Error saving project config: {}", e))?;
+        }
         cli::parser::Command::Unknown(message) => return Err(anyhow!(message)),
         _ => {
             return Err(anyhow::anyhow!(
