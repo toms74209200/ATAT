@@ -1,5 +1,11 @@
 /target
+.atat/
 
-.github/copilot-instructions.md
-.instructions.md
-wampa
+.claude/
+CLAUDE.md
+copilot-instructions.md
+.instructions/
+*mcp.json
+wampa*
+
+secret/
