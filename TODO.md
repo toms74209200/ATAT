@@ -1,7 +1,6 @@
 # ATAT プロジェクト進捗状況
 
 ## 現在の作業
-- [ ] `remote remove` コマンドの実装
 
 ## 次のステップ
 
@@ -14,3 +13,4 @@
 - [x] login コマンドの実装
 - [x] `remote` コマンドの表示機能の実装
 - [x] `remote add` コマンドの実装
+- [x] `remote remove` コマンドの実装

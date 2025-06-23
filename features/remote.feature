@@ -36,3 +36,27 @@ Feature: List remote repositories
     When I run `atat remote add non-existent-owner/non-existent-repo`
     Then the error should be "Error: Repository non-existent-owner/non-existent-repo not found or not accessible."
     And the config file should be empty
+
+  Scenario: Remove a repository successfully
+    Given the config file content is '{"repositories":["owner/repo1","owner/repo2"]}'
+    When I run `atat remote remove owner/repo1`
+    Then the config file should contain "owner/repo2"
+    And the output should be empty
+
+  Scenario: Remove the last repository
+    Given the config file content is '{"repositories":["owner/repo1"]}'
+    When I run `atat remote remove owner/repo1`
+    Then the config file should be empty
+    And the output should be empty
+
+  Scenario: Remove repository from empty configuration
+    Given an empty config file
+    When I run `atat remote remove owner/repo`
+    Then the output should be empty
+    And the config file should be empty
+
+  Scenario: Remove non-existent repository
+    Given the config file content is '{"repositories":["owner/repo1"]}'
+    When I run `atat remote remove owner/repo2`
+    Then the output should be empty
+    And the config file should contain "owner/repo1"
