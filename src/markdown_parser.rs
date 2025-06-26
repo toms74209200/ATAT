@@ -1,12 +1,6 @@
+use crate::todo::TodoItem;
 use anyhow::Result;
 use pulldown_cmark::{Event, Options, Parser};
-
-#[derive(Debug, Clone, PartialEq)]
-pub struct TodoItem {
-    pub text: String,
-    pub is_checked: bool,
-    pub issue_number: Option<u64>,
-}
 
 pub fn parse_todo_markdown(content: &str) -> Result<Vec<TodoItem>> {
     let (items, _, _) = Parser::new_ext(
