@@ -32,9 +32,9 @@ example:
 ### General Development Workflow
 1. Always start with the latest main branch
 2. Review and agree on implementation strategy before starting work:
-   - Check `/spec/requirements.md` for architectural constraints and technical requirements
-   - Review `/spec/spec.md` for relevant use cases and functionality
-   - Verify feature specifications in appropriate `.feature` files
+   - Read `/spec/requirements.md`
+   - Read `/spec/spec.md`
+   - Read relevant `.feature` files
    - Consider test size implications (small/medium/large) based on implementation needs
    - Document the proposed implementation strategy
    - Get team agreement on the implementation approach through:
@@ -49,16 +49,14 @@ example:
 
 3. Create a feature branch for each task/bugfix
 4. Follow TDD approach: test → implementation → refactoring
-5. Update `TODO.md` with EVERY operation
-6. Run `make all` before committing to check for any issues
+5. Update `TODO.md` at task level
+6. Run make all before committing
 7. Create a Pull Request after ensuring all checks pass
 
 ## Project Tracking
 
-The `TODO.md` file must be updated with EVERY operation to maintain an accurate record of development status. Update it when:
+The `TODO.md` file must be updated at the task level:
 
-1. Starting to edit a file (record the target filename)
-2. Encountering compilation/test errors (copy the error message)
-3. When tests fail (record test name and error message)
-4. Finding new issues/concerns (details and mitigation strategy)
-5. Completing feature implementation (summary of implementation)
+- Task start: Record new task in 現在の作業 section
+- During task: Update when encountering errors, issues, or blockers
+- Task completion: Move to 完了した機能 section with summary
