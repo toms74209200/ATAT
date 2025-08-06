@@ -44,7 +44,7 @@ pub async fn run(
                         let text = response.text().await?;
                         match whoami::extract_login_from_user_response(&text) {
                             Ok(login) => output::println(&login, &mut stdout_additional)?,
-                            Err(err) => eprintln!("{}", err),
+                            Err(err) => eprintln!("{err}"),
                         }
                     } else if response.status() == reqwest::StatusCode::UNAUTHORIZED {
                         eprintln!("Token invalid or expired. Please run `login` again.");
@@ -244,14 +244,14 @@ pub async fn run(
                         let issue_number =
                             create_github_issue(&client, repo, &title, &token).await?;
                         output::println(
-                            &format!("Created issue #{}: {}", issue_number, title),
+                            &format!("Created issue #{issue_number}: {title}"),
                             &mut stdout_additional,
                         )?;
                     }
                     push::GitHubOperation::CloseIssue { number } => {
                         close_github_issue(&client, repo, number, &token).await?;
                         output::println(
-                            &format!("Closed issue #{}", number),
+                            &format!("Closed issue #{number}"),
                             &mut stdout_additional,
                         )?;
                     }

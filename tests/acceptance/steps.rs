@@ -516,7 +516,7 @@ async fn when_run_atat_push(world: &mut AtatWorld) {
                     .query(&[("state", "all"), ("sort", "created"), ("direction", "desc")])
                     .send()
                     .await;
-                if let Err(_) = list_response {
+                if list_response.is_err() {
                     panic!("Failed to fetch issues from GitHub");
                 }
 

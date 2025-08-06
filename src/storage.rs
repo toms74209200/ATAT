@@ -140,6 +140,6 @@ fn read_file_bytes(path: &Path) -> Result<Vec<u8>> {
     match fs::read(path) {
         Ok(content) => Ok(content),
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(Vec::new()),
-        Err(e) => Err(e).context(format!("Failed to read file: {:?}", path)),
+        Err(e) => Err(e).context(format!("Failed to read file: {path:?}")),
     }
 }

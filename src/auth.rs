@@ -59,7 +59,7 @@ pub fn handle_polling_response(response: &AccessTokenResponse) -> PollingResult 
                 "The device code has expired. Please run `login` again.".to_string(),
             ),
             "access_denied" => PollingResult::Error("Login cancelled by user.".to_string()),
-            _ => PollingResult::Error(format!("Unknown error: {}", error)),
+            _ => PollingResult::Error(format!("Unknown error: {error}")),
         }
     } else {
         // No error and no access token (this case should not normally occur)
