@@ -36,11 +36,10 @@ pub fn parse_args(args: &[String]) -> Command {
             ("remote", sub_cmd) => {
                 if VALID_REMOTE_SUBCOMMANDS.contains(&sub_cmd) {
                     Command::Unknown(format!(
-                        "Missing repository argument. Usage: atat remote {} <owner>/<repo>",
-                        sub_cmd
+                        "Missing repository argument. Usage: atat remote {sub_cmd} <owner>/<repo>"
                     ))
                 } else {
-                    Command::Unknown(format!("remote {}", sub_cmd))
+                    Command::Unknown(format!("remote {sub_cmd}"))
                 }
             }
             (cmd, _) => Command::Unknown(cmd.to_string()),
@@ -48,7 +47,7 @@ pub fn parse_args(args: &[String]) -> Command {
         _ => match (args[1].as_str(), args[2].as_str()) {
             ("remote", sub_cmd) => {
                 if !VALID_REMOTE_SUBCOMMANDS.contains(&sub_cmd) {
-                    return Command::Unknown(format!("remote {}", sub_cmd));
+                    return Command::Unknown(format!("remote {sub_cmd}"));
                 }
 
                 let repo_arg = &args[3];
@@ -74,7 +73,7 @@ pub fn parse_args(args: &[String]) -> Command {
                     )
                 }
             }
-            (cmd1, cmd2) => Command::Unknown(format!("{} {}", cmd1, cmd2)),
+            (cmd1, cmd2) => Command::Unknown(format!("{cmd1} {cmd2}")),
         },
     }
 }

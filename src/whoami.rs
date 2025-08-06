@@ -23,7 +23,7 @@ pub struct UserResponse {
 pub fn extract_login_from_user_response(json: &str) -> Result<String, String> {
     serde_json::from_str::<UserResponse>(json)
         .map(|user| user.login)
-        .map_err(|e| format!("Failed to parse user response: {}", e))
+        .map_err(|e| format!("Failed to parse user response: {e}"))
 }
 
 #[cfg(test)]

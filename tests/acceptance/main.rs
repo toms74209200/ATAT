@@ -6,6 +6,7 @@ pub struct AtatWorld {
     pub captured_output: Vec<u8>,
     pub login_result: Option<Result<(), anyhow::Error>>,
     pub command_status: Option<ExitStatus>,
+    pub created_issues: Vec<u64>,
 }
 
 #[tokio::main]

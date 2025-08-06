@@ -3,7 +3,9 @@ use anyhow::anyhow;
 use crate::auth;
 use crate::cli;
 use crate::config;
+use crate::markdown_parser;
 use crate::output;
+use crate::push;
 use crate::storage;
 use crate::whoami;
 
@@ -12,6 +14,7 @@ mod endpoints {
     pub const ACCESS_TOKEN: &str = "https://github.com/login/oauth/access_token";
     pub const USER: &str = "https://api.github.com/user";
     pub const REPO_DETAILS: &str = "https://api.github.com/repos";
+    pub const ISSUES: &str = "https://api.github.com/repos";
 }
 
 const CLIENT_ID: &str = std::env!("CLIENT_ID");
@@ -41,7 +44,7 @@ pub async fn run(
                         let text = response.text().await?;
                         match whoami::extract_login_from_user_response(&text) {
                             Ok(login) => output::println(&login, &mut stdout_additional)?,
-                            Err(err) => eprintln!("{}", err),
+                            Err(err) => eprintln!("{err}"),
                         }
                     } else if response.status() == reqwest::StatusCode::UNAUTHORIZED {
                         eprintln!("Token invalid or expired. Please run `login` again.");
@@ -196,6 +199,65 @@ pub async fn run(
             storage::ConfigStorage::save_config(&config_storage, &new_config)
                 .map_err(|e| anyhow::anyhow!("Error saving project config: {}", e))?;
         }
+        cli::parser::Command::Push => {
+            let token_storage = storage::FileTokenStorage::new();
+            let token = match storage::TokenStorage::load(&token_storage)? {
+                Some(token) => token,
+                None => return Err(anyhow!("Authentication required")),
+            };
+
+            let config_storage = storage::LocalConfigStorage::new()
+                .map_err(|e| anyhow!("Failed to read project configuration: {}", e))?;
+
+            let config_map = storage::ConfigStorage::load_config(&config_storage)
+                .map_err(|e| anyhow!("Error loading project config: {}", e))?;
+
+            let repos = config_map
+                .get(&config::ConfigKey::Repositories)
+                .and_then(|v| v.as_array())
+                .ok_or_else(|| anyhow!("No repository configured"))?;
+
+            if repos.is_empty() {
+                return Err(anyhow!("No repository configured"));
+            }
+
+            let repo = repos[0]
+                .as_str()
+                .ok_or_else(|| anyhow!("Invalid repository configuration"))?;
+
+            let todo_content = std::fs::read_to_string("TODO.md")
+                .map_err(|_| anyhow!("TODO.md file not found"))?;
+
+            let todo_items = markdown_parser::parse_todo_markdown(&todo_content)?;
+
+            let client = reqwest::Client::builder()
+                .timeout(std::time::Duration::from_secs(30))
+                .build()?;
+
+            let github_issues = get_github_issues(&client, repo, &token).await?;
+
+            let operations = push::calculate_github_operations(&todo_items, &github_issues);
+
+            for (_, operation) in operations {
+                match operation {
+                    push::GitHubOperation::CreateIssue { title } => {
+                        let issue_number =
+                            create_github_issue(&client, repo, &title, &token).await?;
+                        output::println(
+                            &format!("Created issue #{issue_number}: {title}"),
+                            &mut stdout_additional,
+                        )?;
+                    }
+                    push::GitHubOperation::CloseIssue { number } => {
+                        close_github_issue(&client, repo, number, &token).await?;
+                        output::println(
+                            &format!("Closed issue #{number}"),
+                            &mut stdout_additional,
+                        )?;
+                    }
+                }
+            }
+        }
         cli::parser::Command::Unknown(message) => return Err(anyhow!(message)),
         _ => {
             return Err(anyhow::anyhow!(
@@ -296,4 +358,148 @@ async fn check_repo_exists(
             status
         )),
     }
+}
+
+async fn get_github_issues(
+    client: &reqwest::Client,
+    repo: &str,
+    token: &str,
+) -> anyhow::Result<Vec<push::GitHubIssue>> {
+    let mut all_issues = Vec::new();
+    let mut page = 1;
+    let per_page = 100;
+
+    loop {
+        let url = format!("{}/{}/issues", endpoints::ISSUES, repo);
+
+        let response = client
+            .get(&url)
+            .bearer_auth(token)
+            .header("Accept", "application/vnd.github.v3+json")
+            .header("User-Agent", "atat-cli")
+            .query(&[
+                ("state", "all"),
+                ("page", &page.to_string()),
+                ("per_page", &per_page.to_string()),
+                ("sort", "created"),
+                ("direction", "desc"),
+            ])
+            .send()
+            .await?;
+
+        if !response.status().is_success() {
+            return Err(anyhow::anyhow!(
+                "Failed to get issues: HTTP {}",
+                response.status()
+            ));
+        }
+
+        #[derive(serde::Deserialize)]
+        struct GitHubIssueResponse {
+            number: u64,
+            title: String,
+            state: String,
+        }
+
+        let issues: Vec<GitHubIssueResponse> = response.json().await?;
+
+        if issues.is_empty() {
+            break;
+        }
+
+        all_issues.extend(issues.into_iter().map(|issue| push::GitHubIssue {
+            number: issue.number,
+            title: issue.title,
+            state: match issue.state.as_str() {
+                "open" => push::IssueState::Open,
+                "closed" => push::IssueState::Closed,
+                _ => push::IssueState::Closed,
+            },
+        }));
+
+        if page >= 3 {
+            break;
+        }
+        page += 1;
+    }
+
+    Ok(all_issues)
+}
+
+async fn create_github_issue(
+    client: &reqwest::Client,
+    repo: &str,
+    title: &str,
+    token: &str,
+) -> anyhow::Result<u64> {
+    let url = format!("{}/{}/issues", endpoints::ISSUES, repo);
+
+    #[derive(serde::Serialize)]
+    struct CreateIssueRequest {
+        title: String,
+    }
+
+    #[derive(serde::Deserialize)]
+    struct CreateIssueResponse {
+        number: u64,
+    }
+
+    let request = CreateIssueRequest {
+        title: title.to_string(),
+    };
+
+    let response = client
+        .post(&url)
+        .bearer_auth(token)
+        .header("Accept", "application/vnd.github.v3+json")
+        .header("User-Agent", "atat-cli")
+        .json(&request)
+        .send()
+        .await?;
+
+    if !response.status().is_success() {
+        return Err(anyhow::anyhow!(
+            "Failed to create issue: HTTP {}",
+            response.status()
+        ));
+    }
+
+    let create_response: CreateIssueResponse = response.json().await?;
+    Ok(create_response.number)
+}
+
+async fn close_github_issue(
+    client: &reqwest::Client,
+    repo: &str,
+    issue_number: u64,
+    token: &str,
+) -> anyhow::Result<()> {
+    let url = format!("{}/{}/issues/{}", endpoints::ISSUES, repo, issue_number);
+
+    #[derive(serde::Serialize)]
+    struct UpdateIssueRequest {
+        state: String,
+    }
+
+    let request = UpdateIssueRequest {
+        state: "closed".to_string(),
+    };
+
+    let response = client
+        .patch(&url)
+        .bearer_auth(token)
+        .header("Accept", "application/vnd.github.v3+json")
+        .header("User-Agent", "atat-cli")
+        .json(&request)
+        .send()
+        .await?;
+
+    if !response.status().is_success() {
+        return Err(anyhow::anyhow!(
+            "Failed to close issue: HTTP {}",
+            response.status()
+        ));
+    }
+
+    Ok(())
 }

@@ -93,11 +93,11 @@ mod tests {
 
         assert_eq!(items.len(), 3);
         assert_eq!(items[0].text, "Task 1");
-        assert_eq!(items[0].is_checked, false);
+        assert!(!items[0].is_checked);
         assert_eq!(items[1].text, "Task 2");
-        assert_eq!(items[1].is_checked, true);
+        assert!(items[1].is_checked);
         assert_eq!(items[2].text, "Task 3");
-        assert_eq!(items[2].is_checked, true);
+        assert!(items[2].is_checked);
     }
 
     #[test]
@@ -147,15 +147,15 @@ mod tests {
 
         assert_eq!(items.len(), 5);
         assert_eq!(items[0].text, "Main task");
-        assert_eq!(items[0].is_checked, false);
+        assert!(!items[0].is_checked);
         assert_eq!(items[1].text, "Sub task 1");
-        assert_eq!(items[1].is_checked, false);
+        assert!(!items[1].is_checked);
         assert_eq!(items[2].text, "Sub task 2");
-        assert_eq!(items[2].is_checked, true);
+        assert!(items[2].is_checked);
         assert_eq!(items[3].text, "Sub sub task");
-        assert_eq!(items[3].is_checked, false);
+        assert!(!items[3].is_checked);
         assert_eq!(items[4].text, "Another main task");
-        assert_eq!(items[4].is_checked, true);
+        assert!(items[4].is_checked);
     }
 
     #[test]
@@ -174,13 +174,13 @@ mod tests {
 
         assert_eq!(items.len(), 4);
         assert_eq!(items[0].text, "Completed task");
-        assert_eq!(items[0].is_checked, true);
+        assert!(items[0].is_checked);
         assert_eq!(items[1].text, "Pending task");
-        assert_eq!(items[1].is_checked, false);
+        assert!(!items[1].is_checked);
         assert_eq!(items[2].text, "Another completed");
-        assert_eq!(items[2].is_checked, true);
+        assert!(items[2].is_checked);
         assert_eq!(items[3].text, "Another pending");
-        assert_eq!(items[3].is_checked, false);
+        assert!(!items[3].is_checked);
     }
 
     #[test]
@@ -205,11 +205,11 @@ code block
 
         assert_eq!(items.len(), 3);
         assert_eq!(items[0].text, "Checklist item 1");
-        assert_eq!(items[0].is_checked, false);
+        assert!(!items[0].is_checked);
         assert_eq!(items[1].text, "Checklist item 2");
-        assert_eq!(items[1].is_checked, true);
+        assert!(items[1].is_checked);
         assert_eq!(items[2].text, "Checklist item 3");
-        assert_eq!(items[2].is_checked, false);
+        assert!(!items[2].is_checked);
     }
 
     #[test]
