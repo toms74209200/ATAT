@@ -505,22 +505,44 @@ async fn when_run_atat_push(world: &mut AtatWorld) {
             .unwrap_or_else(|_| "toms74209200/atat-test".to_string());
         let client = reqwest::Client::new();
 
-        for _ in &world.created_issues {
-            for _ in 1..=10 {
-                let list_url = format!("https://api.github.com/repos/{}/issues", repo);
-                let list_response = client
-                    .get(&list_url)
-                    .bearer_auth(&token)
-                    .header("Accept", "application/vnd.github.v3+json")
-                    .header("User-Agent", "atat-cli")
-                    .query(&[("state", "all"), ("sort", "created"), ("direction", "desc")])
-                    .send()
-                    .await;
-                if list_response.is_err() {
-                    panic!("Failed to fetch issues from GitHub");
-                }
+        // Poll GitHub with exponential backoff, checking if all created issues are present
+        let max_attempts = 8; // ~12.7 seconds total (100 + 200 + 400 + 800 + 1600 + 3200 + 6400ms)
+        for attempt in 0..max_attempts {
+            let list_url = format!("https://api.github.com/repos/{}/issues", repo);
+            let response = client
+                .get(&list_url)
+                .bearer_auth(&token)
+                .header("Accept", "application/vnd.github.v3+json")
+                .header("User-Agent", "atat-cli")
+                .query(&[("state", "all"), ("sort", "created"), ("direction", "desc")])
+                .send()
+                .await
+                .ok()
+                .filter(|r| r.status().is_success());
 
-                tokio::time::sleep(std::time::Duration::from_millis(1000)).await;
+            if let Some(response) = response {
+                if let Ok(issues) = response.json::<serde_json::Value>().await {
+                    if let Some(issues_array) = issues.as_array() {
+                        let existing_numbers: Vec<u64> = issues_array
+                            .iter()
+                            .filter_map(|issue| issue["number"].as_u64())
+                            .collect();
+
+                        let all_exist = world
+                            .created_issues
+                            .iter()
+                            .all(|&created_number| existing_numbers.contains(&created_number));
+
+                        if all_exist {
+                            break; // All issues confirmed
+                        }
+                    }
+                }
+            }
+
+            if attempt < max_attempts - 1 {
+                let delay_ms = 100 * (1 << attempt); // 100ms, 200ms, 400ms, 800ms, 1.6s, 3.2s, 6.4s
+                tokio::time::sleep(std::time::Duration::from_millis(delay_ms)).await;
             }
         }
     }
