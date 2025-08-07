@@ -79,6 +79,21 @@ pub fn parse_todo_markdown(content: &str) -> Result<Vec<TodoItem>> {
     Ok(items)
 }
 
+pub fn serialize_todo_markdown(items: &[TodoItem]) -> String {
+    items
+        .iter()
+        .map(|item| {
+            let checkbox = if item.is_checked { "[x]" } else { "[ ]" };
+            let text = if let Some(issue_number) = item.issue_number {
+                format!("{} (#{issue_number})", item.text)
+            } else {
+                item.text.clone()
+            };
+            format!("- {checkbox} {text}\n")
+        })
+        .collect()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -260,5 +275,52 @@ code block
         assert_eq!(items[1].text, "Task with symbols !@#$%");
         assert_eq!(items[2].text, "Task with Japanese 日本語");
         assert_eq!(items[3].text, "Task with numbers 123");
+    }
+
+    #[test]
+    fn test_serialize_todo_markdown() {
+        let items = vec![
+            TodoItem {
+                text: "Unchecked task".to_string(),
+                is_checked: false,
+                issue_number: None,
+            },
+            TodoItem {
+                text: "Checked task".to_string(),
+                is_checked: true,
+                issue_number: None,
+            },
+            TodoItem {
+                text: "Task with issue".to_string(),
+                is_checked: false,
+                issue_number: Some(123),
+            },
+            TodoItem {
+                text: "Checked task with issue".to_string(),
+                is_checked: true,
+                issue_number: Some(456),
+            },
+        ];
+
+        let expected = "- [ ] Unchecked task\n- [x] Checked task\n- [ ] Task with issue (#123)\n- [x] Checked task with issue (#456)\n";
+        let actual = serialize_todo_markdown(&items);
+
+        assert_eq!(actual, expected);
+    }
+
+    #[test]
+    fn test_serialize_empty_list() {
+        let items = vec![];
+        let actual = serialize_todo_markdown(&items);
+        assert_eq!(actual, "");
+    }
+
+    #[test]
+    fn test_serialize_roundtrip() {
+        let original_content = "- [ ] Task 1\n- [x] Task 2 (#123)\n- [ ] Task 3\n";
+        let parsed_items = parse_todo_markdown(original_content).unwrap();
+        let serialized = serialize_todo_markdown(&parsed_items);
+
+        assert_eq!(serialized, original_content);
     }
 }
