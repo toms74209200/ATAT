@@ -1,18 +1,6 @@
+use crate::github::issues::{GitHubIssue, IssueState};
 use crate::todo::TodoItem;
 use anyhow::Result;
-
-#[derive(Debug, Clone, PartialEq)]
-pub struct GitHubIssue {
-    pub number: u64,
-    pub title: String,
-    pub state: IssueState,
-}
-
-#[derive(Debug, Clone, PartialEq)]
-pub enum IssueState {
-    Open,
-    Closed,
-}
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum GitHubOperation {

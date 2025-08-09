@@ -3,9 +3,9 @@ use anyhow::anyhow;
 use crate::auth;
 use crate::cli;
 use crate::config;
+use crate::github;
 use crate::markdown_parser;
 use crate::output;
-use crate::push;
 use crate::storage;
 use crate::whoami;
 
@@ -236,11 +236,11 @@ pub async fn run(
 
             let github_issues = get_github_issues(&client, repo, &token).await?;
 
-            let operations = push::calculate_github_operations(&todo_items, &github_issues);
+            let operations = github::push::calculate_github_operations(&todo_items, &github_issues);
 
             for (_, operation) in operations {
                 match operation {
-                    push::GitHubOperation::CreateIssue { title } => {
+                    github::push::GitHubOperation::CreateIssue { title } => {
                         let issue_number =
                             create_github_issue(&client, repo, &title, &token).await?;
                         output::println(
@@ -248,7 +248,7 @@ pub async fn run(
                             &mut stdout_additional,
                         )?;
                     }
-                    push::GitHubOperation::CloseIssue { number } => {
+                    github::push::GitHubOperation::CloseIssue { number } => {
                         close_github_issue(&client, repo, number, &token).await?;
                         output::println(
                             &format!("Closed issue #{number}"),
@@ -364,7 +364,7 @@ async fn get_github_issues(
     client: &reqwest::Client,
     repo: &str,
     token: &str,
-) -> anyhow::Result<Vec<push::GitHubIssue>> {
+) -> anyhow::Result<Vec<github::issues::GitHubIssue>> {
     let mut all_issues = Vec::new();
     let mut page = 1;
     let per_page = 100;
@@ -407,13 +407,13 @@ async fn get_github_issues(
             break;
         }
 
-        all_issues.extend(issues.into_iter().map(|issue| push::GitHubIssue {
+        all_issues.extend(issues.into_iter().map(|issue| github::issues::GitHubIssue {
             number: issue.number,
             title: issue.title,
             state: match issue.state.as_str() {
-                "open" => push::IssueState::Open,
-                "closed" => push::IssueState::Closed,
-                _ => push::IssueState::Closed,
+                "open" => github::issues::IssueState::Open,
+                "closed" => github::issues::IssueState::Closed,
+                _ => github::issues::IssueState::Closed,
             },
         }));
 
