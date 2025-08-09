@@ -1,9 +1,9 @@
 pub mod auth;
 pub mod cli;
 pub mod config;
+pub mod github;
 pub mod markdown_parser;
 pub mod output;
-pub mod push;
 pub mod run;
 pub mod storage;
 pub mod todo;
