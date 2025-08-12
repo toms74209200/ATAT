@@ -1,6 +1,7 @@
 use crate::github::issues::{GitHubIssue, IssueState};
 use crate::todo::TodoItem;
 use anyhow::Result;
+use std::collections::HashMap;
 
 pub fn parse_github_issues(issues_json: &[serde_json::Value]) -> Vec<GitHubIssue> {
     issues_json
@@ -60,24 +61,27 @@ pub fn synchronize_with_github_issues(
     todo_items: &[TodoItem],
     github_issues: &[GitHubIssue],
 ) -> Vec<TodoItem> {
+    let github_issues_map: HashMap<u64, &GitHubIssue> = github_issues
+        .iter()
+        .map(|issue| (issue.number, issue))
+        .collect();
+
     let updated_items: Vec<TodoItem> = todo_items
         .iter()
         .map(|todo_item| {
-            if let Some(issue_number) = todo_item.issue_number {
-                if let Some(github_issue) = github_issues
-                    .iter()
-                    .find(|issue| issue.number == issue_number)
-                {
-                    if matches!(github_issue.state, IssueState::Closed) && !todo_item.is_checked {
-                        return TodoItem {
-                            text: todo_item.text.clone(),
-                            is_checked: true,
-                            issue_number: todo_item.issue_number,
-                        };
-                    }
-                }
-            }
-            todo_item.clone()
+            todo_item
+                .issue_number
+                .and_then(|issue_number| github_issues_map.get(&issue_number))
+                .filter(|github_issue| matches!(github_issue.state, IssueState::Closed))
+                .filter(|_| !todo_item.is_checked)
+                .map_or_else(
+                    || todo_item.clone(),
+                    |_| TodoItem {
+                        text: todo_item.text.clone(),
+                        is_checked: true,
+                        issue_number: todo_item.issue_number,
+                    },
+                )
         })
         .collect();
 
@@ -85,15 +89,10 @@ pub fn synchronize_with_github_issues(
         .iter()
         .filter(|github_issue| matches!(github_issue.state, IssueState::Open))
         .filter(|github_issue| {
-            let exists_by_number = updated_items
-                .iter()
-                .any(|todo_item| todo_item.issue_number == Some(github_issue.number));
-
-            let exists_by_title = updated_items
-                .iter()
-                .any(|todo_item| todo_item.text.trim() == github_issue.title.trim());
-
-            !exists_by_number && !exists_by_title
+            !updated_items.iter().any(|todo_item| {
+                todo_item.issue_number == Some(github_issue.number)
+                    || todo_item.text.trim() == github_issue.title.trim()
+            })
         })
         .map(|github_issue| TodoItem {
             text: github_issue.title.clone(),
