@@ -377,11 +377,14 @@ async fn then_config_file_should_be_empty(_world: &mut AtatWorld) {
 }
 
 #[given("the TODO.md file contains:")]
-async fn given_todo_md_file_contains(_world: &mut AtatWorld, step: &Step) {
+async fn given_todo_md_file_contains(world: &mut AtatWorld, step: &Step) {
     let todo_content = step
         .docstring
         .as_ref()
         .expect("Expected docstring with TODO content");
+
+    world.original_todo_content = todo_content.trim().to_string();
+
     let current_dir = env::current_dir().expect("Failed to get current directory for test setup.");
     let todo_path = current_dir.join("TODO.md");
     std::fs::write(&todo_path, todo_content.trim())
@@ -396,7 +399,7 @@ async fn given_todo_md_file_does_not_exist(_world: &mut AtatWorld) {
 }
 
 #[given(regex = r#"^GitHub issue #(\d+) is open$"#)]
-async fn given_github_issue_is_open(world: &mut AtatWorld, _issue_number: String) {
+async fn given_github_issue_is_open(world: &mut AtatWorld, issue_number: String) {
     let home_dir = std::env::var("HOME").expect("HOME environment variable not set");
     let token_path = std::path::PathBuf::from(home_dir)
         .join(".atat")
@@ -411,8 +414,12 @@ async fn given_github_issue_is_open(world: &mut AtatWorld, _issue_number: String
     let client = reqwest::Client::new();
 
     let create_url = format!("https://api.github.com/repos/{}/issues", repo);
+    let title = match issue_number.as_str() {
+        "789" => "Task to be completed",
+        _ => "Completed task",
+    };
     let create_body = serde_json::json!({
-        "title": "Completed task",
+        "title": title,
         "body": "Test issue created for acceptance tests"
     });
 
@@ -434,6 +441,11 @@ async fn given_github_issue_is_open(world: &mut AtatWorld, _issue_number: String
 
         if let Some(actual_number) = created_issue["number"].as_u64() {
             world.created_issues.push(actual_number);
+
+            let requested_number: u64 = issue_number.parse().expect("Invalid issue number");
+            world
+                .issue_number_mapping
+                .insert(requested_number, actual_number);
 
             for _attempt in 1..=5 {
                 tokio::time::sleep(std::time::Duration::from_millis(1000)).await;
@@ -464,12 +476,6 @@ async fn given_github_issue_is_open(world: &mut AtatWorld, _issue_number: String
 
 #[given("I update TODO.md to use the actual issue number")]
 async fn given_update_todo_md_with_actual_issue_number(world: &mut AtatWorld) {
-    let actual_issue_number = if let Some(&created_number) = world.created_issues.last() {
-        created_number
-    } else {
-        panic!("No test issue was created");
-    };
-
     let current_dir =
         std::env::current_dir().expect("Failed to get current directory for test setup.");
     let todo_path = current_dir.join("TODO.md");
@@ -477,7 +483,13 @@ async fn given_update_todo_md_with_actual_issue_number(world: &mut AtatWorld) {
     let current_content = std::fs::read_to_string(&todo_path)
         .unwrap_or_else(|e| panic!("Failed to read TODO.md file {:?}: {}", todo_path, e));
 
-    let updated_content = current_content.replace("#123", &format!("#{}", actual_issue_number));
+    let mut updated_content = current_content.clone();
+
+    for (&requested, &actual) in &world.issue_number_mapping {
+        let placeholder = format!("#{}", requested);
+        let replacement = format!("#{}", actual);
+        updated_content = updated_content.replace(&placeholder, &replacement);
+    }
 
     let final_content = if updated_content.ends_with('\n') {
         updated_content
@@ -505,8 +517,7 @@ async fn when_run_atat_push(world: &mut AtatWorld) {
             .unwrap_or_else(|_| "toms74209200/atat-test".to_string());
         let client = reqwest::Client::new();
 
-        // Poll GitHub with exponential backoff, checking if all created issues are present
-        let max_attempts = 8; // ~12.7 seconds total (100 + 200 + 400 + 800 + 1600 + 3200 + 6400ms)
+        let max_attempts = 8;
         for attempt in 0..max_attempts {
             let list_url = format!("https://api.github.com/repos/{}/issues", repo);
             let response = client
@@ -534,14 +545,14 @@ async fn when_run_atat_push(world: &mut AtatWorld) {
                             .all(|&created_number| existing_numbers.contains(&created_number));
 
                         if all_exist {
-                            break; // All issues confirmed
+                            break;
                         }
                     }
                 }
             }
 
             if attempt < max_attempts - 1 {
-                let delay_ms = 100 * (1 << attempt); // 100ms, 200ms, 400ms, 800ms, 1.6s, 3.2s, 6.4s
+                let delay_ms = 100 * (1 << attempt);
                 tokio::time::sleep(std::time::Duration::from_millis(delay_ms)).await;
             }
         }
@@ -782,5 +793,232 @@ async fn then_created_issue_should_be_closed(world: &mut AtatWorld) {
         "closed",
         "Issue #{} should be closed on GitHub",
         actual_issue_number
+    );
+}
+
+#[then("cleanup remaining open issues")]
+async fn cleanup_remaining_open_issues(world: &mut AtatWorld) {
+    if world.created_issues.is_empty() {
+        return;
+    }
+
+    let home_dir = std::env::var("HOME").expect("HOME environment variable not set");
+    let token_path = std::path::PathBuf::from(home_dir)
+        .join(".atat")
+        .join("token");
+    let token = std::fs::read_to_string(&token_path)
+        .expect("Failed to read GitHub token for cleanup")
+        .trim()
+        .to_string();
+
+    let repo =
+        std::env::var("TEST_GITHUB_REPO").unwrap_or_else(|_| "toms74209200/atat-test".to_string());
+    let client = reqwest::Client::new();
+
+    for &issue_number in &world.created_issues {
+        let check_url = format!(
+            "https://api.github.com/repos/{}/issues/{}",
+            repo, issue_number
+        );
+
+        let check_response = client
+            .get(&check_url)
+            .bearer_auth(&token)
+            .header("Accept", "application/vnd.github.v3+json")
+            .header("User-Agent", "atat-cli")
+            .send()
+            .await;
+
+        if let Ok(response) = check_response {
+            if response.status().is_success() {
+                if let Ok(issue_data) = response.json::<serde_json::Value>().await {
+                    if let Some(state) = issue_data["state"].as_str() {
+                        if state == "open" {
+                            let close_url = format!(
+                                "https://api.github.com/repos/{}/issues/{}",
+                                repo, issue_number
+                            );
+                            let close_body = serde_json::json!({
+                                "state": "closed"
+                            });
+
+                            let _close_response = client
+                                .patch(&close_url)
+                                .bearer_auth(&token)
+                                .header("Accept", "application/vnd.github.v3+json")
+                                .header("User-Agent", "atat-cli")
+                                .json(&close_body)
+                                .send()
+                                .await;
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+#[when("I run `atat pull`")]
+async fn when_run_atat_pull(world: &mut AtatWorld) {
+    let target_dir = std::env::var("CARGO_TARGET_DIR").unwrap_or_else(|_| "target".to_string());
+    let profile = if cfg!(debug_assertions) {
+        "debug"
+    } else {
+        "release"
+    };
+    let atat_path = std::path::PathBuf::from(&target_dir)
+        .join(profile)
+        .join("atat");
+    let output = std::process::Command::new(&atat_path)
+        .arg("pull")
+        .output()
+        .expect("Failed to run atat pull");
+    world.captured_output = [output.stdout, output.stderr].concat();
+    world.command_status = Some(output.status);
+}
+
+#[given(regex = r#"^there is an open GitHub issue #(\d+) with title "(.+)"$"#)]
+async fn given_github_issue_exists(world: &mut AtatWorld, issue_number: u64, title: String) {
+    let home_dir = std::env::var("HOME").expect("HOME environment variable not set");
+    let token_path = std::path::PathBuf::from(home_dir)
+        .join(".atat")
+        .join("token");
+    let token = std::fs::read_to_string(&token_path)
+        .expect("Failed to read GitHub token for tests")
+        .trim()
+        .to_string();
+
+    let repo =
+        std::env::var("TEST_GITHUB_REPO").unwrap_or_else(|_| "toms74209200/atat-test".to_string());
+    let client = reqwest::Client::new();
+
+    let create_url = format!("https://api.github.com/repos/{}/issues", repo);
+    let issue_body = serde_json::json!({
+        "title": title,
+        "body": "Test issue created for acceptance tests"
+    });
+
+    let response = client
+        .post(&create_url)
+        .bearer_auth(&token)
+        .header("Accept", "application/vnd.github.v3+json")
+        .header("User-Agent", "atat-cli")
+        .json(&issue_body)
+        .send()
+        .await
+        .expect("Failed to create test issue");
+
+    assert!(
+        response.status().is_success(),
+        "Failed to create issue on GitHub: {}",
+        response.status()
+    );
+
+    let created_issue: serde_json::Value = response
+        .json()
+        .await
+        .expect("Failed to parse create issue response");
+
+    let actual_issue_number = created_issue["number"].as_u64().unwrap();
+    world.created_issues.push(actual_issue_number);
+
+    world
+        .issue_number_mapping
+        .insert(issue_number, actual_issue_number);
+}
+
+#[given(regex = r#"^GitHub issue #(\d+) is closed$"#)]
+async fn given_github_issue_is_closed(world: &mut AtatWorld, issue_number: u64) {
+    let home_dir = std::env::var("HOME").expect("HOME environment variable not set");
+    let token_path = std::path::PathBuf::from(home_dir)
+        .join(".atat")
+        .join("token");
+    let token = std::fs::read_to_string(&token_path)
+        .expect("Failed to read GitHub token for tests")
+        .trim()
+        .to_string();
+
+    let repo =
+        std::env::var("TEST_GITHUB_REPO").unwrap_or_else(|_| "toms74209200/atat-test".to_string());
+    let client = reqwest::Client::new();
+
+    let actual_issue_number = world
+        .issue_number_mapping
+        .get(&issue_number)
+        .copied()
+        .expect(&format!(
+            "Issue number #{} not found in mapping. Available mappings: {:?}",
+            issue_number, world.issue_number_mapping
+        ));
+
+    let close_url = format!(
+        "https://api.github.com/repos/{}/issues/{}",
+        repo, actual_issue_number
+    );
+    let close_body = serde_json::json!({
+        "state": "closed"
+    });
+
+    let response = client
+        .patch(&close_url)
+        .bearer_auth(&token)
+        .header("Accept", "application/vnd.github.v3+json")
+        .header("User-Agent", "atat-cli")
+        .json(&close_body)
+        .send()
+        .await
+        .expect("Failed to close test issue");
+
+    assert!(
+        response.status().is_success(),
+        "Failed to close issue #{} on GitHub: {}",
+        actual_issue_number,
+        response.status()
+    );
+}
+
+#[then(regex = r#"^the TODO\.md file should contain "(.+)"$"#)]
+async fn then_todo_md_should_contain(world: &mut AtatWorld, expected_content: String) {
+    let current_dir =
+        env::current_dir().expect("Failed to get current directory for test assertion.");
+    let todo_path = current_dir.join("TODO.md");
+    let todo_content = std::fs::read_to_string(&todo_path).expect("Failed to read TODO.md file");
+
+    let mut expected_with_actual_numbers = expected_content.clone();
+    for (&requested, &actual) in &world.issue_number_mapping {
+        let placeholder = format!("(#{})", requested);
+        let replacement = format!("(#{})", actual);
+        expected_with_actual_numbers =
+            expected_with_actual_numbers.replace(&placeholder, &replacement);
+    }
+
+    assert!(
+        todo_content.contains(&expected_with_actual_numbers),
+        "Expected TODO.md to contain '{}' but found:\n{}",
+        expected_with_actual_numbers,
+        todo_content
+    );
+}
+
+#[then("the TODO.md file should remain unchanged")]
+async fn then_todo_md_should_remain_unchanged(world: &mut AtatWorld) {
+    let current_dir =
+        env::current_dir().expect("Failed to get current directory for test assertion.");
+    let todo_path = current_dir.join("TODO.md");
+    let current_content = std::fs::read_to_string(&todo_path).expect("Failed to read TODO.md file");
+
+    // Create expected content with actual issue numbers
+    let mut expected_with_actual_numbers = world.original_todo_content.clone();
+    for (&requested, &actual) in &world.issue_number_mapping {
+        let placeholder = format!("#{}", requested);
+        let replacement = format!("#{}", actual);
+        expected_with_actual_numbers =
+            expected_with_actual_numbers.replace(&placeholder, &replacement);
+    }
+
+    assert_eq!(
+        current_content.trim(),
+        expected_with_actual_numbers.trim(),
+        "TODO.md file should remain unchanged but content differs"
     );
 }
