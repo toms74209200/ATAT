@@ -10,6 +10,7 @@ Feature: Push TODO.md items to GitHub Issues
     When I run `atat push`
     Then a new GitHub issue should be created with title "New task to implement"
     And the TODO.md file should be updated with the issue number
+    And cleanup remaining open issues
 
   Scenario: Close issue for checked TODO item
     Given the user is logged in via GitHub App for tests
