@@ -234,7 +234,7 @@ pub async fn run(
                 .timeout(std::time::Duration::from_secs(30))
                 .build()?;
 
-            let github_issues = get_github_issues(&client, repo, &token).await?;
+            let github_issues = fetch_github_issues_async(&client, repo, &token).await?;
 
             let operations = github::push::calculate_github_operations(&todo_items, &github_issues);
 
@@ -257,6 +257,50 @@ pub async fn run(
                     }
                 }
             }
+        }
+        cli::parser::Command::Pull => {
+            let token_storage = storage::FileTokenStorage::new();
+            let token = match storage::TokenStorage::load(&token_storage)? {
+                Some(token) => token,
+                None => return Err(anyhow!("Authentication required")),
+            };
+
+            let config_storage = storage::LocalConfigStorage::new()
+                .map_err(|e| anyhow!("Failed to read project configuration: {}", e))?;
+
+            let config_map = storage::ConfigStorage::load_config(&config_storage)
+                .map_err(|e| anyhow!("Error loading project config: {}", e))?;
+
+            let repos = config_map
+                .get(&config::ConfigKey::Repositories)
+                .and_then(|v| v.as_array())
+                .ok_or_else(|| anyhow!("No repository configured"))?;
+
+            if repos.is_empty() {
+                return Err(anyhow!("No repository configured"));
+            }
+
+            let repo = repos[0]
+                .as_str()
+                .ok_or_else(|| anyhow!("Invalid repository configuration"))?;
+
+            let todo_content = std::fs::read_to_string("TODO.md")
+                .map_err(|_| anyhow!("TODO.md file not found"))?;
+
+            let todo_items = markdown_parser::parse_todo_markdown(&todo_content)?;
+
+            let client = reqwest::Client::builder()
+                .timeout(std::time::Duration::from_secs(30))
+                .build()?;
+
+            let github_issues = fetch_github_issues_async(&client, repo, &token).await?;
+
+            let updated_todo_items =
+                github::pull::synchronize_with_github_issues(&todo_items, &github_issues);
+
+            let updated_content = markdown_parser::serialize_todo_markdown(&updated_todo_items);
+            std::fs::write("TODO.md", updated_content)
+                .map_err(|e| anyhow!("Failed to write TODO.md: {}", e))?;
         }
         cli::parser::Command::Unknown(message) => return Err(anyhow!(message)),
         _ => {
@@ -360,7 +404,7 @@ async fn check_repo_exists(
     }
 }
 
-async fn get_github_issues(
+async fn fetch_github_issues_async(
     client: &reqwest::Client,
     repo: &str,
     token: &str,
@@ -371,7 +415,6 @@ async fn get_github_issues(
 
     loop {
         let url = format!("{}/{}/issues", endpoints::ISSUES, repo);
-
         let response = client
             .get(&url)
             .bearer_auth(token)
@@ -394,32 +437,14 @@ async fn get_github_issues(
             ));
         }
 
-        #[derive(serde::Deserialize)]
-        struct GitHubIssueResponse {
-            number: u64,
-            title: String,
-            state: String,
-        }
+        let issues_json: Vec<serde_json::Value> = response.json().await?;
 
-        let issues: Vec<GitHubIssueResponse> = response.json().await?;
-
-        if issues.is_empty() {
+        if issues_json.is_empty() {
             break;
         }
 
-        all_issues.extend(issues.into_iter().map(|issue| github::issues::GitHubIssue {
-            number: issue.number,
-            title: issue.title,
-            state: match issue.state.as_str() {
-                "open" => github::issues::IssueState::Open,
-                "closed" => github::issues::IssueState::Closed,
-                _ => github::issues::IssueState::Closed,
-            },
-        }));
-
-        if page >= 3 {
-            break;
-        }
+        let parsed_issues = github::pull::parse_github_issues(&issues_json);
+        all_issues.extend(parsed_issues);
         page += 1;
     }
 
