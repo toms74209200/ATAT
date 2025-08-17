@@ -7,7 +7,7 @@ Feature: Pull GitHub Issues to TODO.md items
       """
       - [ ] Existing task
       """
-    And there is an open GitHub issue #456 with title "New issue from GitHub"
+    And GitHub issue #456 with title "New issue from GitHub"
     When I run `atat pull`
     Then the TODO.md file should contain "- [ ] New issue from GitHub (#456)"
     And cleanup remaining open issues
@@ -19,7 +19,7 @@ Feature: Pull GitHub Issues to TODO.md items
       """
       - [ ] Task to be completed (#789)
       """
-    And GitHub issue #789 is open
+    And GitHub issue #789 with title "Task to be completed"
     And I update TODO.md to use the actual issue number
     And GitHub issue #789 is closed
     When I run `atat pull`
@@ -33,8 +33,8 @@ Feature: Pull GitHub Issues to TODO.md items
       - [ ] Open task (#123)
       - [x] Completed task (#456)
       """
-    And GitHub issue #123 is open
-    And GitHub issue #456 is open
+    And GitHub issue #123 with title "Open task"
+    And GitHub issue #456 with title "Completed task"
     And I update TODO.md to use the actual issue number
     And GitHub issue #456 is closed
     When I run `atat pull`
