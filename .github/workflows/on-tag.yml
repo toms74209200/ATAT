@@ -1,0 +1,29 @@
+name: On tag push
+
+on:
+  push:
+    tags:
+      - '*'
+
+jobs:
+  small-test:
+    uses: ./.github/workflows/job-test-small.yml
+    with:
+      with-coverage: false
+  medium-test:
+    needs: 
+      - small-test
+    uses: ./.github/workflows/job-test-medium.yml
+    secrets:
+      CLIENT_ID: ${{ secrets.CLIENT_ID }}
+      PRIVATE_KEY: ${{ secrets.PRIVATE_KEY }}
+  build:
+    needs:
+      - medium-test
+    uses: ./.github/workflows/job-build.yml
+    secrets:
+      CLIENT_ID: ${{ secrets.CLIENT_ID }}
+  release:
+    needs:
+      - build
+    uses: ./.github/workflows/job-release.yml

@@ -1,0 +1,21 @@
+name: Job - Release
+
+on:
+  workflow_call:
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v5
+        with:
+          path: ./artifacts
+      - name: Create release with GitHub CLI
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release create ${{ github.ref_name }} --generate-notes \
+            ./artifacts/atat-linux-x86_64/atat-linux-x86_64 \
+            ./artifacts/atat-linux-aarch64/atat-linux-aarch64
