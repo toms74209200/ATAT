@@ -8,7 +8,7 @@ anyhow = "1.0.99"
 pulldown-cmark = "0.13.0"
 reqwest = { version = "0.12.23", features = ["json"] }
 serde = { version = "1.0.219", features = ["derive"] }
-serde_json = "1.0.140"
+serde_json = "1.0.143"
 tokio = { version = "1.44.2", features = ["full"] }
 
 [dev-dependencies]
