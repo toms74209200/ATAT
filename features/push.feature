@@ -19,7 +19,7 @@ Feature: Push TODO.md items to GitHub Issues
       """
       - [x] Completed task (#123)
       """
-    And GitHub issue #123 is open
+    And GitHub issue #123 with title "Completed task"
     And I update TODO.md to use the actual issue number
     When I run `atat push`
     Then the created issue should be closed
