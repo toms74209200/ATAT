@@ -9,6 +9,8 @@ jobs:
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@v6
+      - name: Update Rust toolchain
+        run: rustup update stable && rustup default stable
       - name: Run linter
         run: cargo clippy -- -D warnings
       - name: Run Formatter
