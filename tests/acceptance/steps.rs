@@ -581,21 +581,13 @@ async fn then_todo_md_should_be_updated_with_issue_number(world: &mut AtatWorld)
     let content = std::fs::read_to_string(&todo_path)
         .unwrap_or_else(|e| panic!("Failed to read TODO.md file {:?}: {}", todo_path, e));
 
-    let updated_content = content.replace(
-        "New task to implement",
-        &format!("New task to implement (#{})\\n", actual_issue_number),
-    );
-    std::fs::write(&todo_path, updated_content)
-        .unwrap_or_else(|e| panic!("Failed to write TODO.md file {:?}: {}", todo_path, e));
-
-    let final_content = std::fs::read_to_string(&todo_path)
-        .unwrap_or_else(|e| panic!("Failed to read TODO.md file {:?}: {}", todo_path, e));
-
-    let re = regex::Regex::new(r"\(#\d+\)").unwrap();
+    let expected_pattern = format!(r"New task to implement \(#{}\)", actual_issue_number);
+    let re = regex::Regex::new(&expected_pattern).unwrap();
     assert!(
-        re.is_match(&final_content),
-        "Expected TODO.md to contain issue number, but got:\n---\n{}\n---",
-        final_content
+        re.is_match(&content),
+        "Expected TODO.md to contain 'New task to implement (#{})', but got:\n---\n{}\n---",
+        actual_issue_number,
+        content
     );
 }
 

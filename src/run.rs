@@ -238,24 +238,63 @@ pub async fn run(
 
             let operations = github::push::calculate_github_operations(&todo_items, &github_issues);
 
-            for (_, operation) in operations {
-                match operation {
+            let mut results = Vec::new();
+
+            for (todo_item, operation) in operations {
+                let result = match &operation {
                     github::push::GitHubOperation::CreateIssue { title } => {
-                        let issue_number =
-                            create_github_issue(&client, repo, &title, &token).await?;
+                        create_github_issue(&client, repo, title, &token)
+                            .await
+                            .map(|issue_number| (todo_item.clone(), Some(issue_number)))
+                    }
+                    github::push::GitHubOperation::CloseIssue { number } => {
+                        close_github_issue(&client, repo, *number, &token)
+                            .await
+                            .map(|_| (todo_item.clone(), None))
+                    }
+                };
+
+                match (&result, &operation) {
+                    (Ok((_, Some(issue_number))), _) => {
                         output::println(
-                            &format!("Created issue #{issue_number}: {title}"),
+                            &format!("Created issue #{issue_number}: {}", todo_item.text),
                             &mut stdout_additional,
                         )?;
                     }
-                    github::push::GitHubOperation::CloseIssue { number } => {
-                        close_github_issue(&client, repo, number, &token).await?;
+                    (Ok((_, None)), github::push::GitHubOperation::CloseIssue { number }) => {
                         output::println(
                             &format!("Closed issue #{number}"),
                             &mut stdout_additional,
                         )?;
                     }
+                    _ => {}
                 }
+
+                results.push(result);
+            }
+
+            let (successes, failures): (Vec<_>, Vec<_>) =
+                results.into_iter().partition(Result::is_ok);
+
+            let mut updated_todo_items = todo_items.clone();
+            for success in successes {
+                if let Ok((todo_item, Some(issue_number))) = success
+                    && let Some(pos) = updated_todo_items.iter().position(|item| {
+                        item.text == todo_item.text
+                            && item.is_checked == todo_item.is_checked
+                            && item.issue_number == todo_item.issue_number
+                    })
+                {
+                    updated_todo_items[pos].issue_number = Some(issue_number);
+                }
+            }
+
+            let updated_content = markdown_parser::serialize_todo_markdown(&updated_todo_items);
+            std::fs::write("TODO.md", updated_content)
+                .map_err(|e| anyhow!("Failed to write TODO.md: {}", e))?;
+
+            if let Some(Err(error)) = failures.into_iter().next() {
+                return Err(error);
             }
         }
         cli::parser::Command::Pull => {
