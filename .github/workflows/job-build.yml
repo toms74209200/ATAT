@@ -38,7 +38,7 @@ jobs:
           CLIENT_ID: ${{ secrets.CLIENT_ID }}
       - name: Prepare artifact
         run: cp target/${{ matrix.target }}/release/atat ${{ matrix.artifact-name }}
-      - uses: actions/upload-artifact@v6
+      - uses: actions/upload-artifact@v7
         with:
           name: ${{ matrix.artifact-name }}
           path: ${{ matrix.artifact-name }}
