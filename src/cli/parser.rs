@@ -5,6 +5,7 @@ pub enum Command {
     Whoami,
     Push,
     Pull,
+    Clean { dry_run: bool },
     RemoteList,
     RemoteAdd { repo: String },
     RemoteRemove { repo: String },
@@ -30,11 +31,13 @@ pub fn parse_args(args: &[String]) -> Command {
             "whoami" => Command::Whoami,
             "push" => Command::Push,
             "pull" => Command::Pull,
+            "clean" => Command::Clean { dry_run: false },
             "remote" => Command::RemoteList,
             "help" => Command::Help,
             cmd => Command::Unknown(cmd.to_string()),
         },
         3 => match (args[1].as_str(), args[2].as_str()) {
+            ("clean", "--dry-run") => Command::Clean { dry_run: true },
             ("remote", sub_cmd) => {
                 if VALID_REMOTE_SUBCOMMANDS.contains(&sub_cmd) {
                     Command::Unknown(format!(
@@ -177,6 +180,22 @@ mod tests {
                 repo: "owner/repo".to_string()
             }
         );
+    }
+
+    #[test]
+    fn test_parse_clean_command() {
+        let args = vec!["program".to_string(), "clean".to_string()];
+        assert_eq!(parse_args(&args), Command::Clean { dry_run: false });
+    }
+
+    #[test]
+    fn test_parse_clean_dry_run_command() {
+        let args = vec![
+            "program".to_string(),
+            "clean".to_string(),
+            "--dry-run".to_string(),
+        ];
+        assert_eq!(parse_args(&args), Command::Clean { dry_run: true });
     }
 
     #[test]
