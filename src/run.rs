@@ -297,6 +297,68 @@ pub async fn run(
                 return Err(error);
             }
         }
+        cli::parser::Command::Clean { dry_run } => {
+            let token_storage = storage::FileTokenStorage::new();
+            let token = match storage::TokenStorage::load(&token_storage)? {
+                Some(token) => token,
+                None => return Err(anyhow!("Authentication required")),
+            };
+
+            let config_storage = storage::LocalConfigStorage::new()
+                .map_err(|e| anyhow!("Failed to read project configuration: {}", e))?;
+
+            let config_map = storage::ConfigStorage::load_config(&config_storage)
+                .map_err(|e| anyhow!("Error loading project config: {}", e))?;
+
+            let repos = config_map
+                .get(&config::ConfigKey::Repositories)
+                .and_then(|v| v.as_array())
+                .ok_or_else(|| anyhow!("No repository configured"))?;
+
+            if repos.is_empty() {
+                return Err(anyhow!("No repository configured"));
+            }
+
+            let repo = repos[0]
+                .as_str()
+                .ok_or_else(|| anyhow!("Invalid repository configuration"))?;
+
+            let todo_content = std::fs::read_to_string("TODO.md")
+                .map_err(|_| anyhow!("TODO.md file not found"))?;
+
+            let todo_items = markdown_parser::parse_todo_markdown(&todo_content)?;
+
+            let candidates: Vec<crate::clean::CleanCandidate> = todo_items
+                .iter()
+                .filter_map(|item| crate::clean::CleanCandidate::try_from(item).ok())
+                .collect();
+
+            let client = reqwest::Client::builder()
+                .timeout(std::time::Duration::from_secs(30))
+                .build()?;
+
+            let github_issues = fetch_github_issues_async(&client, repo, &token).await?;
+
+            let removable = crate::clean::find_removable_items(&candidates, &github_issues);
+
+            if !dry_run {
+                let updated_items: Vec<_> = todo_items
+                    .iter()
+                    .filter(|item| {
+                        !removable.iter().any(|r| {
+                            item.is_checked
+                                && item.issue_number == Some(r.issue_number)
+                                && item.text == r.text
+                        })
+                    })
+                    .cloned()
+                    .collect();
+
+                let updated_content = markdown_parser::serialize_todo_markdown(&updated_items);
+                std::fs::write("TODO.md", updated_content)
+                    .map_err(|e| anyhow!("Failed to write TODO.md: {}", e))?;
+            }
+        }
         cli::parser::Command::Pull => {
             let token_storage = storage::FileTokenStorage::new();
             let token = match storage::TokenStorage::load(&token_storage)? {
