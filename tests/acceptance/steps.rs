@@ -993,3 +993,64 @@ async fn then_todo_md_should_remain_unchanged(world: &mut AtatWorld) {
         "TODO.md file should remain unchanged but content differs"
     );
 }
+
+#[when("I run `atat clean`")]
+async fn when_run_atat_clean(world: &mut AtatWorld) {
+    let target_dir = std::env::var("CARGO_TARGET_DIR").unwrap_or_else(|_| "target".to_string());
+    let profile = if cfg!(debug_assertions) {
+        "debug"
+    } else {
+        "release"
+    };
+    let atat_path = std::path::PathBuf::from(&target_dir)
+        .join(profile)
+        .join("atat");
+    let output = std::process::Command::new(&atat_path)
+        .arg("clean")
+        .output()
+        .expect("Failed to run atat clean");
+    world.captured_output = [output.stdout, output.stderr].concat();
+    world.command_status = Some(output.status);
+}
+
+#[when("I run `atat clean --dry-run`")]
+async fn when_run_atat_clean_dry_run(world: &mut AtatWorld) {
+    let target_dir = std::env::var("CARGO_TARGET_DIR").unwrap_or_else(|_| "target".to_string());
+    let profile = if cfg!(debug_assertions) {
+        "debug"
+    } else {
+        "release"
+    };
+    let atat_path = std::path::PathBuf::from(&target_dir)
+        .join(profile)
+        .join("atat");
+    let output = std::process::Command::new(&atat_path)
+        .args(["clean", "--dry-run"])
+        .output()
+        .expect("Failed to run atat clean --dry-run");
+    world.captured_output = [output.stdout, output.stderr].concat();
+    world.command_status = Some(output.status);
+}
+
+#[then(regex = r#"^the TODO\.md file should not contain "(.+)"$"#)]
+async fn then_todo_md_should_not_contain(world: &mut AtatWorld, expected_content: String) {
+    let current_dir =
+        env::current_dir().expect("Failed to get current directory for test assertion.");
+    let todo_path = current_dir.join("TODO.md");
+    let todo_content = std::fs::read_to_string(&todo_path).expect("Failed to read TODO.md file");
+
+    let mut expected_with_actual_numbers = expected_content.clone();
+    for (&requested, &actual) in &world.issue_number_mapping {
+        let placeholder = format!("(#{})", requested);
+        let replacement = format!("(#{})", actual);
+        expected_with_actual_numbers =
+            expected_with_actual_numbers.replace(&placeholder, &replacement);
+    }
+
+    assert!(
+        !todo_content.contains(&expected_with_actual_numbers),
+        "Expected TODO.md to not contain '{}' but found:\n{}",
+        expected_with_actual_numbers,
+        todo_content
+    );
+}
