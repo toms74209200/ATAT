@@ -837,17 +837,17 @@ async fn given_github_issue_exists(world: &mut AtatWorld, issue_number: u64, tit
                 .issue_number_mapping
                 .insert(issue_number, actual_number);
 
+            let individual_url = format!(
+                "https://api.github.com/repos/{}/issues/{}",
+                repo, actual_number
+            );
             let mut delay = 100;
             for _attempt in 1..=5 {
                 tokio::time::sleep(std::time::Duration::from_millis(delay)).await;
-                delay *= 2;
+                delay = (delay * 2).min(2000);
 
-                let check_url = format!(
-                    "https://api.github.com/repos/{}/issues/{}",
-                    repo, actual_number
-                );
                 let check_response = client
-                    .get(&check_url)
+                    .get(&individual_url)
                     .bearer_auth(&token)
                     .header("Accept", "application/vnd.github.v3+json")
                     .header("User-Agent", "atat-cli")
@@ -860,11 +860,36 @@ async fn given_github_issue_exists(world: &mut AtatWorld, issue_number: u64, tit
                     }
                 }
             }
+
+            let list_url = format!("https://api.github.com/repos/{}/issues", repo);
+            let mut delay = 500;
+            for _attempt in 1..=8 {
+                tokio::time::sleep(std::time::Duration::from_millis(delay)).await;
+                delay = (delay * 2).min(5000);
+
+                let check_response = client
+                    .get(&list_url)
+                    .bearer_auth(&token)
+                    .header("Accept", "application/vnd.github.v3+json")
+                    .header("User-Agent", "atat-cli")
+                    .query(&[("state", "all"), ("per_page", "100")])
+                    .send()
+                    .await;
+
+                if let Ok(response) = check_response {
+                    if let Ok(issues) = response.json::<serde_json::Value>().await {
+                        if let Some(arr) = issues.as_array() {
+                            if arr.iter().any(|i| i["number"].as_u64() == Some(actual_number)) {
+                                break;
+                            }
+                        }
+                    }
+                }
+            }
         }
     } else {
         panic!("Failed to create test issue: {}", create_response.status());
     }
-    tokio::time::sleep(std::time::Duration::from_secs(5)).await;
 }
 
 #[given(regex = r#"^GitHub issue #(\d+) is closed$"#)]
