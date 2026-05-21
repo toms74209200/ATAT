@@ -879,7 +879,10 @@ async fn given_github_issue_exists(world: &mut AtatWorld, issue_number: u64, tit
                 if let Ok(response) = check_response {
                     if let Ok(issues) = response.json::<serde_json::Value>().await {
                         if let Some(arr) = issues.as_array() {
-                            if arr.iter().any(|i| i["number"].as_u64() == Some(actual_number)) {
+                            if arr
+                                .iter()
+                                .any(|i| i["number"].as_u64() == Some(actual_number))
+                            {
                                 break;
                             }
                         }
