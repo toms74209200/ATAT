@@ -110,7 +110,7 @@ pub async fn run(
                     }
                 }
                 Err(e) => {
-                    return Err(anyhow::anyhow!("Error loading project config: {}", e));
+                    return Err(anyhow::anyhow!("Error loading project config: {e}"));
                 }
             }
         }
@@ -118,7 +118,7 @@ pub async fn run(
             let config_storage = match storage::LocalConfigStorage::new() {
                 Ok(storage) => storage,
                 Err(e) => {
-                    return Err(anyhow::anyhow!("Error initializing config storage: {}", e));
+                    return Err(anyhow::anyhow!("Error initializing config storage: {e}"));
                 }
             };
 
@@ -143,18 +143,13 @@ pub async fn run(
                         Ok(true) => {
                             repos_array.push(new_repo_val);
                             storage::ConfigStorage::save_config(&config_storage, &config_map)
-                                .map_err(|e| {
-                                    anyhow::anyhow!("Error saving project config: {}", e)
-                                })?;
+                                .map_err(|e| anyhow::anyhow!("Error saving project config: {e}"))?;
                         }
                         Ok(false) => {
-                            return Err(anyhow!(
-                                "Repository {} not found or not accessible.",
-                                repo
-                            ));
+                            return Err(anyhow!("Repository {repo} not found or not accessible."));
                         }
                         Err(e) => {
-                            return Err(anyhow!("Failed to check repository {}: {}", repo, e));
+                            return Err(anyhow!("Failed to check repository {repo}: {e}"));
                         }
                     }
                 }
@@ -168,7 +163,7 @@ pub async fn run(
             let config_storage = match storage::LocalConfigStorage::new() {
                 Ok(storage) => storage,
                 Err(e) => {
-                    return Err(anyhow::anyhow!("Error initializing config storage: {}", e));
+                    return Err(anyhow::anyhow!("Error initializing config storage: {e}"));
                 }
             };
 
@@ -197,7 +192,7 @@ pub async fn run(
             };
 
             storage::ConfigStorage::save_config(&config_storage, &new_config)
-                .map_err(|e| anyhow::anyhow!("Error saving project config: {}", e))?;
+                .map_err(|e| anyhow::anyhow!("Error saving project config: {e}"))?;
         }
         cli::parser::Command::Push => {
             let token_storage = storage::FileTokenStorage::new();
@@ -207,10 +202,10 @@ pub async fn run(
             };
 
             let config_storage = storage::LocalConfigStorage::new()
-                .map_err(|e| anyhow!("Failed to read project configuration: {}", e))?;
+                .map_err(|e| anyhow!("Failed to read project configuration: {e}"))?;
 
             let config_map = storage::ConfigStorage::load_config(&config_storage)
-                .map_err(|e| anyhow!("Error loading project config: {}", e))?;
+                .map_err(|e| anyhow!("Error loading project config: {e}"))?;
 
             let repos = config_map
                 .get(&config::ConfigKey::Repositories)
@@ -291,7 +286,7 @@ pub async fn run(
 
             let updated_content = markdown_parser::serialize_todo_markdown(&updated_todo_items);
             std::fs::write("TODO.md", updated_content)
-                .map_err(|e| anyhow!("Failed to write TODO.md: {}", e))?;
+                .map_err(|e| anyhow!("Failed to write TODO.md: {e}"))?;
 
             if let Some(Err(error)) = failures.into_iter().next() {
                 return Err(error);
@@ -305,10 +300,10 @@ pub async fn run(
             };
 
             let config_storage = storage::LocalConfigStorage::new()
-                .map_err(|e| anyhow!("Failed to read project configuration: {}", e))?;
+                .map_err(|e| anyhow!("Failed to read project configuration: {e}"))?;
 
             let config_map = storage::ConfigStorage::load_config(&config_storage)
-                .map_err(|e| anyhow!("Error loading project config: {}", e))?;
+                .map_err(|e| anyhow!("Error loading project config: {e}"))?;
 
             let repos = config_map
                 .get(&config::ConfigKey::Repositories)
@@ -356,7 +351,7 @@ pub async fn run(
 
                 let updated_content = markdown_parser::serialize_todo_markdown(&updated_items);
                 std::fs::write("TODO.md", updated_content)
-                    .map_err(|e| anyhow!("Failed to write TODO.md: {}", e))?;
+                    .map_err(|e| anyhow!("Failed to write TODO.md: {e}"))?;
             }
         }
         cli::parser::Command::Pull => {
@@ -367,10 +362,10 @@ pub async fn run(
             };
 
             let config_storage = storage::LocalConfigStorage::new()
-                .map_err(|e| anyhow!("Failed to read project configuration: {}", e))?;
+                .map_err(|e| anyhow!("Failed to read project configuration: {e}"))?;
 
             let config_map = storage::ConfigStorage::load_config(&config_storage)
-                .map_err(|e| anyhow!("Error loading project config: {}", e))?;
+                .map_err(|e| anyhow!("Error loading project config: {e}"))?;
 
             let repos = config_map
                 .get(&config::ConfigKey::Repositories)
@@ -401,7 +396,7 @@ pub async fn run(
 
             let updated_content = markdown_parser::serialize_todo_markdown(&updated_todo_items);
             std::fs::write("TODO.md", updated_content)
-                .map_err(|e| anyhow!("Failed to write TODO.md: {}", e))?;
+                .map_err(|e| anyhow!("Failed to write TODO.md: {e}"))?;
         }
         cli::parser::Command::Unknown(message) => return Err(anyhow!(message)),
         _ => {
@@ -499,8 +494,7 @@ async fn check_repo_exists(
         reqwest::StatusCode::NOT_FOUND => Ok(false),
         reqwest::StatusCode::FORBIDDEN => Ok(false),
         status => Err(anyhow::anyhow!(
-            "Failed to check repository: GitHub API returned HTTP {}",
-            status
+            "Failed to check repository: GitHub API returned HTTP {status}"
         )),
     }
 }
