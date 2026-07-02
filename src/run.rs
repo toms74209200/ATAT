@@ -391,8 +391,26 @@ pub async fn run(
 
             let github_issues = fetch_github_issues_async(&client, repo, &token).await?;
 
-            let updated_todo_items =
-                github::pull::synchronize_with_github_issues(&todo_items, &github_issues);
+            let title_synchronization = github::pull::synchronize_titles_with_history(
+                &todo_items,
+                &github_issues,
+                |issue_number| fetch_issue_events_async(&client, repo, issue_number, &token),
+            )
+            .await?;
+
+            for issue_number in title_synchronization.locally_edited_issues {
+                output::println(
+                    &format!(
+                        "Warning: TODO.md text for issue #{issue_number} was changed locally; run `atat push` to update the issue title"
+                    ),
+                    &mut stdout_additional,
+                )?;
+            }
+
+            let updated_todo_items = github::pull::synchronize_with_github_issues(
+                &title_synchronization.items,
+                &github_issues,
+            );
 
             let updated_content = markdown_parser::serialize_todo_markdown(&updated_todo_items);
             std::fs::write("TODO.md", updated_content)
@@ -544,6 +562,55 @@ async fn fetch_github_issues_async(
     }
 
     Ok(all_issues)
+}
+
+async fn fetch_issue_events_async(
+    client: &reqwest::Client,
+    repo: &str,
+    issue_number: u64,
+    token: &str,
+) -> anyhow::Result<Vec<serde_json::Value>> {
+    let mut all_events = Vec::new();
+    let mut page = 1;
+    let per_page = 100;
+
+    loop {
+        let url = format!(
+            "{}/{}/issues/{}/events",
+            endpoints::ISSUES,
+            repo,
+            issue_number
+        );
+        let response = client
+            .get(&url)
+            .bearer_auth(token)
+            .header("Accept", "application/vnd.github.v3+json")
+            .header("User-Agent", "atat-cli")
+            .query(&[
+                ("page", &page.to_string()),
+                ("per_page", &per_page.to_string()),
+            ])
+            .send()
+            .await?;
+
+        if !response.status().is_success() {
+            return Err(anyhow::anyhow!(
+                "Failed to get issue events: HTTP {}",
+                response.status()
+            ));
+        }
+
+        let events_json: Vec<serde_json::Value> = response.json().await?;
+
+        if events_json.is_empty() {
+            break;
+        }
+
+        all_events.extend(events_json);
+        page += 1;
+    }
+
+    Ok(all_events)
 }
 
 async fn create_github_issue(
