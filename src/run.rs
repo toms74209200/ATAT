@@ -110,7 +110,7 @@ pub async fn run(
                     }
                 }
                 Err(e) => {
-                    return Err(anyhow::anyhow!("Error loading project config: {}", e));
+                    return Err(anyhow::anyhow!("Error loading project config: {e}"));
                 }
             }
         }
@@ -118,7 +118,7 @@ pub async fn run(
             let config_storage = match storage::LocalConfigStorage::new() {
                 Ok(storage) => storage,
                 Err(e) => {
-                    return Err(anyhow::anyhow!("Error initializing config storage: {}", e));
+                    return Err(anyhow::anyhow!("Error initializing config storage: {e}"));
                 }
             };
 
@@ -143,18 +143,13 @@ pub async fn run(
                         Ok(true) => {
                             repos_array.push(new_repo_val);
                             storage::ConfigStorage::save_config(&config_storage, &config_map)
-                                .map_err(|e| {
-                                    anyhow::anyhow!("Error saving project config: {}", e)
-                                })?;
+                                .map_err(|e| anyhow::anyhow!("Error saving project config: {e}"))?;
                         }
                         Ok(false) => {
-                            return Err(anyhow!(
-                                "Repository {} not found or not accessible.",
-                                repo
-                            ));
+                            return Err(anyhow!("Repository {repo} not found or not accessible."));
                         }
                         Err(e) => {
-                            return Err(anyhow!("Failed to check repository {}: {}", repo, e));
+                            return Err(anyhow!("Failed to check repository {repo}: {e}"));
                         }
                     }
                 }
@@ -168,7 +163,7 @@ pub async fn run(
             let config_storage = match storage::LocalConfigStorage::new() {
                 Ok(storage) => storage,
                 Err(e) => {
-                    return Err(anyhow::anyhow!("Error initializing config storage: {}", e));
+                    return Err(anyhow::anyhow!("Error initializing config storage: {e}"));
                 }
             };
 
@@ -197,7 +192,7 @@ pub async fn run(
             };
 
             storage::ConfigStorage::save_config(&config_storage, &new_config)
-                .map_err(|e| anyhow::anyhow!("Error saving project config: {}", e))?;
+                .map_err(|e| anyhow::anyhow!("Error saving project config: {e}"))?;
         }
         cli::parser::Command::Push => {
             let token_storage = storage::FileTokenStorage::new();
@@ -207,10 +202,10 @@ pub async fn run(
             };
 
             let config_storage = storage::LocalConfigStorage::new()
-                .map_err(|e| anyhow!("Failed to read project configuration: {}", e))?;
+                .map_err(|e| anyhow!("Failed to read project configuration: {e}"))?;
 
             let config_map = storage::ConfigStorage::load_config(&config_storage)
-                .map_err(|e| anyhow!("Error loading project config: {}", e))?;
+                .map_err(|e| anyhow!("Error loading project config: {e}"))?;
 
             let repos = config_map
                 .get(&config::ConfigKey::Repositories)
@@ -291,7 +286,7 @@ pub async fn run(
 
             let updated_content = markdown_parser::serialize_todo_markdown(&updated_todo_items);
             std::fs::write("TODO.md", updated_content)
-                .map_err(|e| anyhow!("Failed to write TODO.md: {}", e))?;
+                .map_err(|e| anyhow!("Failed to write TODO.md: {e}"))?;
 
             if let Some(Err(error)) = failures.into_iter().next() {
                 return Err(error);
@@ -305,10 +300,10 @@ pub async fn run(
             };
 
             let config_storage = storage::LocalConfigStorage::new()
-                .map_err(|e| anyhow!("Failed to read project configuration: {}", e))?;
+                .map_err(|e| anyhow!("Failed to read project configuration: {e}"))?;
 
             let config_map = storage::ConfigStorage::load_config(&config_storage)
-                .map_err(|e| anyhow!("Error loading project config: {}", e))?;
+                .map_err(|e| anyhow!("Error loading project config: {e}"))?;
 
             let repos = config_map
                 .get(&config::ConfigKey::Repositories)
@@ -356,7 +351,7 @@ pub async fn run(
 
                 let updated_content = markdown_parser::serialize_todo_markdown(&updated_items);
                 std::fs::write("TODO.md", updated_content)
-                    .map_err(|e| anyhow!("Failed to write TODO.md: {}", e))?;
+                    .map_err(|e| anyhow!("Failed to write TODO.md: {e}"))?;
             }
         }
         cli::parser::Command::Pull => {
@@ -367,10 +362,10 @@ pub async fn run(
             };
 
             let config_storage = storage::LocalConfigStorage::new()
-                .map_err(|e| anyhow!("Failed to read project configuration: {}", e))?;
+                .map_err(|e| anyhow!("Failed to read project configuration: {e}"))?;
 
             let config_map = storage::ConfigStorage::load_config(&config_storage)
-                .map_err(|e| anyhow!("Error loading project config: {}", e))?;
+                .map_err(|e| anyhow!("Error loading project config: {e}"))?;
 
             let repos = config_map
                 .get(&config::ConfigKey::Repositories)
@@ -396,12 +391,30 @@ pub async fn run(
 
             let github_issues = fetch_github_issues_async(&client, repo, &token).await?;
 
-            let updated_todo_items =
-                github::pull::synchronize_with_github_issues(&todo_items, &github_issues);
+            let title_synchronization = github::pull::synchronize_titles_with_history(
+                &todo_items,
+                &github_issues,
+                |issue_number| fetch_issue_events_async(&client, repo, issue_number, &token),
+            )
+            .await?;
+
+            for issue_number in title_synchronization.locally_edited_issues {
+                output::println(
+                    &format!(
+                        "Warning: TODO.md text for issue #{issue_number} was changed locally; run `atat push` to update the issue title"
+                    ),
+                    &mut stdout_additional,
+                )?;
+            }
+
+            let updated_todo_items = github::pull::synchronize_with_github_issues(
+                &title_synchronization.items,
+                &github_issues,
+            );
 
             let updated_content = markdown_parser::serialize_todo_markdown(&updated_todo_items);
             std::fs::write("TODO.md", updated_content)
-                .map_err(|e| anyhow!("Failed to write TODO.md: {}", e))?;
+                .map_err(|e| anyhow!("Failed to write TODO.md: {e}"))?;
         }
         cli::parser::Command::Unknown(message) => return Err(anyhow!(message)),
         _ => {
@@ -499,8 +512,7 @@ async fn check_repo_exists(
         reqwest::StatusCode::NOT_FOUND => Ok(false),
         reqwest::StatusCode::FORBIDDEN => Ok(false),
         status => Err(anyhow::anyhow!(
-            "Failed to check repository: GitHub API returned HTTP {}",
-            status
+            "Failed to check repository: GitHub API returned HTTP {status}"
         )),
     }
 }
@@ -550,6 +562,55 @@ async fn fetch_github_issues_async(
     }
 
     Ok(all_issues)
+}
+
+async fn fetch_issue_events_async(
+    client: &reqwest::Client,
+    repo: &str,
+    issue_number: u64,
+    token: &str,
+) -> anyhow::Result<Vec<serde_json::Value>> {
+    let mut all_events = Vec::new();
+    let mut page = 1;
+    let per_page = 100;
+
+    loop {
+        let url = format!(
+            "{}/{}/issues/{}/events",
+            endpoints::ISSUES,
+            repo,
+            issue_number
+        );
+        let response = client
+            .get(&url)
+            .bearer_auth(token)
+            .header("Accept", "application/vnd.github.v3+json")
+            .header("User-Agent", "atat-cli")
+            .query(&[
+                ("page", &page.to_string()),
+                ("per_page", &per_page.to_string()),
+            ])
+            .send()
+            .await?;
+
+        if !response.status().is_success() {
+            return Err(anyhow::anyhow!(
+                "Failed to get issue events: HTTP {}",
+                response.status()
+            ));
+        }
+
+        let events_json: Vec<serde_json::Value> = response.json().await?;
+
+        if events_json.is_empty() {
+            break;
+        }
+
+        all_events.extend(events_json);
+        page += 1;
+    }
+
+    Ok(all_events)
 }
 
 async fn create_github_issue(

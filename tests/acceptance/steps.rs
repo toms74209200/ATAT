@@ -895,6 +895,97 @@ async fn given_github_issue_exists(world: &mut AtatWorld, issue_number: u64, tit
     }
 }
 
+#[given(regex = r#"^GitHub issue #(\d+) is renamed to "(.+)"$"#)]
+async fn given_github_issue_is_renamed(
+    world: &mut AtatWorld,
+    issue_number: u64,
+    new_title: String,
+) {
+    let home_dir = std::env::var("HOME").expect("HOME environment variable not set");
+    let token_path = std::path::PathBuf::from(home_dir)
+        .join(".atat")
+        .join("token");
+    let token = std::fs::read_to_string(&token_path)
+        .expect("Failed to read GitHub token for tests")
+        .trim()
+        .to_string();
+
+    let repo =
+        std::env::var("TEST_GITHUB_REPO").unwrap_or_else(|_| "toms74209200/atat-test".to_string());
+    let client = reqwest::Client::new();
+
+    let actual_issue_number = world
+        .issue_number_mapping
+        .get(&issue_number)
+        .copied()
+        .expect(&format!(
+            "Issue number #{} not found in mapping. Available mappings: {:?}",
+            issue_number, world.issue_number_mapping
+        ));
+
+    let update_url = format!(
+        "https://api.github.com/repos/{}/issues/{}",
+        repo, actual_issue_number
+    );
+    let update_body = serde_json::json!({
+        "title": new_title
+    });
+
+    let response = client
+        .patch(&update_url)
+        .bearer_auth(&token)
+        .header("Accept", "application/vnd.github.v3+json")
+        .header("User-Agent", "atat-cli")
+        .json(&update_body)
+        .send()
+        .await
+        .expect("Failed to rename test issue");
+
+    assert!(
+        response.status().is_success(),
+        "Failed to rename issue #{} on GitHub: {}",
+        actual_issue_number,
+        response.status()
+    );
+
+    let events_url = format!(
+        "https://api.github.com/repos/{}/issues/{}/events",
+        repo, actual_issue_number
+    );
+    let mut delay = 100;
+    let max_attempts = 10;
+    for attempt in 1..=max_attempts {
+        let check_response = client
+            .get(&events_url)
+            .bearer_auth(&token)
+            .header("Accept", "application/vnd.github.v3+json")
+            .header("User-Agent", "atat-cli")
+            .send()
+            .await;
+
+        if let Ok(response) = check_response {
+            if response.status().is_success() {
+                if let Ok(events) = response.json::<serde_json::Value>().await {
+                    if let Some(events_array) = events.as_array() {
+                        let rename_visible = events_array.iter().any(|event| {
+                            event["event"].as_str() == Some("renamed")
+                                && event["rename"]["to"].as_str() == Some(new_title.as_str())
+                        });
+                        if rename_visible {
+                            break;
+                        }
+                    }
+                }
+            }
+        }
+
+        if attempt < max_attempts {
+            tokio::time::sleep(std::time::Duration::from_millis(delay)).await;
+            delay *= 2;
+        }
+    }
+}
+
 #[given(regex = r#"^GitHub issue #(\d+) is closed$"#)]
 async fn given_github_issue_is_closed(world: &mut AtatWorld, issue_number: u64) {
     let home_dir = std::env::var("HOME").expect("HOME environment variable not set");

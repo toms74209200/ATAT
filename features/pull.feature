@@ -41,6 +41,33 @@ Feature: Pull GitHub Issues to TODO.md items
     Then the TODO.md file should remain unchanged
     And cleanup remaining open issues
 
+  Scenario: Update TODO item text when issue is renamed on GitHub
+    Given the user is logged in via GitHub App for tests
+    And the config file content is '{"repositories":["toms74209200/atat-test"]}'
+    And the TODO.md file contains:
+      """
+      - [ ] Old issue title (#111)
+      """
+    And GitHub issue #111 with title "Old issue title"
+    And I update TODO.md to use the actual issue number
+    And GitHub issue #111 is renamed to "New issue title"
+    When I run `atat pull`
+    Then the TODO.md file should contain "- [ ] New issue title (#111)"
+    And cleanup remaining open issues
+
+  Scenario: Keep locally edited TODO text on pull
+    Given the user is logged in via GitHub App for tests
+    And the config file content is '{"repositories":["toms74209200/atat-test"]}'
+    And the TODO.md file contains:
+      """
+      - [ ] Locally edited title (#111)
+      """
+    And GitHub issue #111 with title "Original issue title"
+    And I update TODO.md to use the actual issue number
+    When I run `atat pull`
+    Then the TODO.md file should contain "- [ ] Locally edited title (#111)"
+    And cleanup remaining open issues
+
   Scenario: Error when not logged in
     Given the user is not logged in
     And the config file content is '{"repositories":["toms74209200/atat-test"]}'

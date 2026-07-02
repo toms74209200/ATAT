@@ -57,6 +57,113 @@ where
     Ok(all_issues)
 }
 
+#[derive(Debug, Clone, PartialEq)]
+pub struct TitleSynchronization {
+    pub items: Vec<TodoItem>,
+    pub locally_edited_issues: Vec<u64>,
+}
+
+pub async fn synchronize_titles_with_history<F, Fut>(
+    todo_items: &[TodoItem],
+    github_issues: &[GitHubIssue],
+    events_fetcher: F,
+) -> Result<TitleSynchronization>
+where
+    F: Fn(u64) -> Fut,
+    Fut: std::future::Future<Output = Result<Vec<serde_json::Value>>>,
+{
+    let mut past_titles = HashMap::new();
+    for issue_number in find_title_mismatches(todo_items, github_issues) {
+        let events = events_fetcher(issue_number).await?;
+        past_titles.insert(issue_number, parse_past_titles(&events));
+    }
+
+    let (items, locally_edited_issues) =
+        synchronize_titles(todo_items, github_issues, &past_titles);
+
+    Ok(TitleSynchronization {
+        items,
+        locally_edited_issues,
+    })
+}
+
+fn parse_past_titles(events_json: &[serde_json::Value]) -> Vec<String> {
+    events_json
+        .iter()
+        .filter(|event| event["event"].as_str() == Some("renamed"))
+        .filter_map(|event| event["rename"]["from"].as_str())
+        .map(str::to_string)
+        .collect()
+}
+
+fn find_title_mismatches(todo_items: &[TodoItem], github_issues: &[GitHubIssue]) -> Vec<u64> {
+    let github_issues_map: HashMap<u64, &GitHubIssue> = github_issues
+        .iter()
+        .map(|issue| (issue.number, issue))
+        .collect();
+
+    todo_items
+        .iter()
+        .filter_map(|todo_item| {
+            todo_item
+                .issue_number
+                .and_then(|issue_number| github_issues_map.get(&issue_number))
+                .filter(|github_issue| matches!(github_issue.state, IssueState::Open))
+                .filter(|github_issue| todo_item.text.trim() != github_issue.title.trim())
+                .map(|github_issue| github_issue.number)
+        })
+        .collect()
+}
+
+fn synchronize_titles(
+    todo_items: &[TodoItem],
+    github_issues: &[GitHubIssue],
+    past_titles: &HashMap<u64, Vec<String>>,
+) -> (Vec<TodoItem>, Vec<u64>) {
+    let github_issues_map: HashMap<u64, &GitHubIssue> = github_issues
+        .iter()
+        .map(|issue| (issue.number, issue))
+        .collect();
+
+    let mut local_edits = Vec::new();
+
+    let updated_items = todo_items
+        .iter()
+        .map(|todo_item| {
+            let renamed_issue = todo_item
+                .issue_number
+                .and_then(|issue_number| github_issues_map.get(&issue_number))
+                .filter(|github_issue| matches!(github_issue.state, IssueState::Open))
+                .filter(|github_issue| todo_item.text.trim() != github_issue.title.trim());
+
+            match renamed_issue {
+                None => todo_item.clone(),
+                Some(github_issue) => {
+                    let is_stale_local_text =
+                        past_titles.get(&github_issue.number).is_some_and(|titles| {
+                            titles
+                                .iter()
+                                .any(|title| title.trim() == todo_item.text.trim())
+                        });
+
+                    if is_stale_local_text {
+                        TodoItem {
+                            text: github_issue.title.clone(),
+                            is_checked: todo_item.is_checked,
+                            issue_number: todo_item.issue_number,
+                        }
+                    } else {
+                        local_edits.push(github_issue.number);
+                        todo_item.clone()
+                    }
+                }
+            }
+        })
+        .collect();
+
+    (updated_items, local_edits)
+}
+
 pub fn synchronize_with_github_issues(
     todo_items: &[TodoItem],
     github_issues: &[GitHubIssue],
@@ -620,6 +727,370 @@ mod tests {
         assert_eq!(result[3].text, "New open issue");
         assert_eq!(result[3].is_checked, false);
         assert_eq!(result[3].issue_number, Some(300));
+    }
+
+    #[test]
+    fn test_parse_past_titles_extracts_renamed_events() {
+        let events_json = vec![
+            serde_json::json!({
+                "event": "renamed",
+                "rename": {"from": "First title", "to": "Second title"}
+            }),
+            serde_json::json!({
+                "event": "labeled",
+                "label": {"name": "bug"}
+            }),
+            serde_json::json!({
+                "event": "renamed",
+                "rename": {"from": "Second title", "to": "Third title"}
+            }),
+        ];
+
+        let past_titles = parse_past_titles(&events_json);
+
+        assert_eq!(past_titles, vec!["First title", "Second title"]);
+    }
+
+    #[test]
+    fn test_parse_past_titles_empty_events() {
+        let past_titles = parse_past_titles(&[]);
+        assert!(past_titles.is_empty());
+    }
+
+    #[test]
+    fn test_parse_past_titles_ignores_malformed_rename() {
+        let events_json = vec![
+            serde_json::json!({"event": "renamed"}),
+            serde_json::json!({"event": "renamed", "rename": {"to": "No from"}}),
+        ];
+
+        let past_titles = parse_past_titles(&events_json);
+
+        assert!(past_titles.is_empty());
+    }
+
+    #[test]
+    fn test_find_title_mismatches_detects_open_issue_with_different_title() {
+        let todo_items = vec![
+            TodoItem {
+                text: "Old title".to_string(),
+                is_checked: false,
+                issue_number: Some(123),
+            },
+            TodoItem {
+                text: "Same title".to_string(),
+                is_checked: false,
+                issue_number: Some(456),
+            },
+        ];
+        let github_issues = vec![
+            GitHubIssue {
+                number: 123,
+                title: "New title".to_string(),
+                state: IssueState::Open,
+            },
+            GitHubIssue {
+                number: 456,
+                title: "Same title".to_string(),
+                state: IssueState::Open,
+            },
+        ];
+
+        let mismatches = find_title_mismatches(&todo_items, &github_issues);
+
+        assert_eq!(mismatches, vec![123]);
+    }
+
+    #[test]
+    fn test_find_title_mismatches_ignores_closed_issues() {
+        let todo_items = vec![TodoItem {
+            text: "Old title".to_string(),
+            is_checked: false,
+            issue_number: Some(123),
+        }];
+        let github_issues = vec![GitHubIssue {
+            number: 123,
+            title: "New title".to_string(),
+            state: IssueState::Closed,
+        }];
+
+        let mismatches = find_title_mismatches(&todo_items, &github_issues);
+
+        assert!(mismatches.is_empty());
+    }
+
+    #[test]
+    fn test_find_title_mismatches_ignores_items_without_issue_number() {
+        let todo_items = vec![TodoItem {
+            text: "Local task".to_string(),
+            is_checked: false,
+            issue_number: None,
+        }];
+        let github_issues = vec![GitHubIssue {
+            number: 123,
+            title: "Unrelated issue".to_string(),
+            state: IssueState::Open,
+        }];
+
+        let mismatches = find_title_mismatches(&todo_items, &github_issues);
+
+        assert!(mismatches.is_empty());
+    }
+
+    #[test]
+    fn test_find_title_mismatches_compares_trimmed() {
+        let todo_items = vec![TodoItem {
+            text: "  Same title  ".to_string(),
+            is_checked: false,
+            issue_number: Some(123),
+        }];
+        let github_issues = vec![GitHubIssue {
+            number: 123,
+            title: "Same title".to_string(),
+            state: IssueState::Open,
+        }];
+
+        let mismatches = find_title_mismatches(&todo_items, &github_issues);
+
+        assert!(mismatches.is_empty());
+    }
+
+    #[test]
+    fn test_synchronize_titles_updates_text_when_remote_renamed() {
+        let todo_items = vec![TodoItem {
+            text: "Old title".to_string(),
+            is_checked: false,
+            issue_number: Some(123),
+        }];
+        let github_issues = vec![GitHubIssue {
+            number: 123,
+            title: "New title".to_string(),
+            state: IssueState::Open,
+        }];
+        let past_titles = HashMap::from([(123u64, vec!["Old title".to_string()])]);
+
+        let (updated_items, local_edits) =
+            synchronize_titles(&todo_items, &github_issues, &past_titles);
+
+        assert_eq!(updated_items.len(), 1);
+        assert_eq!(updated_items[0].text, "New title");
+        assert_eq!(updated_items[0].issue_number, Some(123));
+        assert!(local_edits.is_empty());
+    }
+
+    #[test]
+    fn test_synchronize_titles_keeps_local_edit_and_reports_it() {
+        let todo_items = vec![TodoItem {
+            text: "Locally edited title".to_string(),
+            is_checked: false,
+            issue_number: Some(123),
+        }];
+        let github_issues = vec![GitHubIssue {
+            number: 123,
+            title: "Original title".to_string(),
+            state: IssueState::Open,
+        }];
+        let past_titles = HashMap::from([(123u64, vec![])]);
+
+        let (updated_items, local_edits) =
+            synchronize_titles(&todo_items, &github_issues, &past_titles);
+
+        assert_eq!(updated_items.len(), 1);
+        assert_eq!(updated_items[0].text, "Locally edited title");
+        assert_eq!(local_edits, vec![123]);
+    }
+
+    #[test]
+    fn test_synchronize_titles_ignores_closed_issues() {
+        let todo_items = vec![TodoItem {
+            text: "Old title".to_string(),
+            is_checked: true,
+            issue_number: Some(123),
+        }];
+        let github_issues = vec![GitHubIssue {
+            number: 123,
+            title: "New title".to_string(),
+            state: IssueState::Closed,
+        }];
+        let past_titles = HashMap::from([(123u64, vec!["Old title".to_string()])]);
+
+        let (updated_items, local_edits) =
+            synchronize_titles(&todo_items, &github_issues, &past_titles);
+
+        assert_eq!(updated_items[0].text, "Old title");
+        assert!(local_edits.is_empty());
+    }
+
+    #[test]
+    fn test_synchronize_titles_keeps_items_in_sync_untouched() {
+        let todo_items = vec![
+            TodoItem {
+                text: "Same title".to_string(),
+                is_checked: false,
+                issue_number: Some(123),
+            },
+            TodoItem {
+                text: "Local task".to_string(),
+                is_checked: false,
+                issue_number: None,
+            },
+        ];
+        let github_issues = vec![GitHubIssue {
+            number: 123,
+            title: "Same title".to_string(),
+            state: IssueState::Open,
+        }];
+        let past_titles = HashMap::new();
+
+        let (updated_items, local_edits) =
+            synchronize_titles(&todo_items, &github_issues, &past_titles);
+
+        assert_eq!(updated_items[0].text, "Same title");
+        assert_eq!(updated_items[1].text, "Local task");
+        assert!(local_edits.is_empty());
+    }
+
+    #[test]
+    fn test_synchronize_titles_matches_past_title_with_trim() {
+        let todo_items = vec![TodoItem {
+            text: "  Old title  ".to_string(),
+            is_checked: false,
+            issue_number: Some(123),
+        }];
+        let github_issues = vec![GitHubIssue {
+            number: 123,
+            title: "New title".to_string(),
+            state: IssueState::Open,
+        }];
+        let past_titles = HashMap::from([(123u64, vec!["Old title".to_string()])]);
+
+        let (updated_items, _) = synchronize_titles(&todo_items, &github_issues, &past_titles);
+
+        assert_eq!(updated_items[0].text, "New title");
+    }
+
+    #[tokio::test]
+    async fn test_synchronize_titles_with_history_updates_renamed_and_reports_local_edits() {
+        let todo_items = vec![
+            TodoItem {
+                text: "Old title".to_string(),
+                is_checked: false,
+                issue_number: Some(123),
+            },
+            TodoItem {
+                text: "Locally edited title".to_string(),
+                is_checked: false,
+                issue_number: Some(456),
+            },
+            TodoItem {
+                text: "Same title".to_string(),
+                is_checked: false,
+                issue_number: Some(789),
+            },
+        ];
+        let github_issues = vec![
+            GitHubIssue {
+                number: 123,
+                title: "New title".to_string(),
+                state: IssueState::Open,
+            },
+            GitHubIssue {
+                number: 456,
+                title: "Original title".to_string(),
+                state: IssueState::Open,
+            },
+            GitHubIssue {
+                number: 789,
+                title: "Same title".to_string(),
+                state: IssueState::Open,
+            },
+        ];
+        let events_fetcher = |issue_number: u64| async move {
+            match issue_number {
+                123 => Ok(vec![serde_json::json!({
+                    "event": "renamed",
+                    "rename": {"from": "Old title", "to": "New title"}
+                })]),
+                456 => Ok(vec![]),
+                _ => Err(anyhow::anyhow!(
+                    "history should not be fetched for issue #{issue_number}"
+                )),
+            }
+        };
+
+        let result =
+            synchronize_titles_with_history(&todo_items, &github_issues, events_fetcher).await;
+
+        assert!(result.is_ok());
+        let synchronization = result.unwrap();
+        assert_eq!(
+            synchronization,
+            TitleSynchronization {
+                items: vec![
+                    TodoItem {
+                        text: "New title".to_string(),
+                        is_checked: false,
+                        issue_number: Some(123),
+                    },
+                    TodoItem {
+                        text: "Locally edited title".to_string(),
+                        is_checked: false,
+                        issue_number: Some(456),
+                    },
+                    TodoItem {
+                        text: "Same title".to_string(),
+                        is_checked: false,
+                        issue_number: Some(789),
+                    },
+                ],
+                locally_edited_issues: vec![456],
+            }
+        );
+    }
+
+    #[tokio::test]
+    async fn test_synchronize_titles_with_history_no_mismatches_never_fetches() {
+        let todo_items = vec![TodoItem {
+            text: "Same title".to_string(),
+            is_checked: false,
+            issue_number: Some(123),
+        }];
+        let github_issues = vec![GitHubIssue {
+            number: 123,
+            title: "Same title".to_string(),
+            state: IssueState::Open,
+        }];
+        let events_fetcher =
+            |_: u64| async move { Err(anyhow::anyhow!("history should not be fetched")) };
+
+        let result =
+            synchronize_titles_with_history(&todo_items, &github_issues, events_fetcher).await;
+
+        assert!(result.is_ok());
+        let synchronization = result.unwrap();
+        assert_eq!(synchronization.items, todo_items);
+        assert!(synchronization.locally_edited_issues.is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_synchronize_titles_with_history_propagates_fetcher_error() {
+        let todo_items = vec![TodoItem {
+            text: "Old title".to_string(),
+            is_checked: false,
+            issue_number: Some(123),
+        }];
+        let github_issues = vec![GitHubIssue {
+            number: 123,
+            title: "New title".to_string(),
+            state: IssueState::Open,
+        }];
+        let events_fetcher = |_: u64| async move { Err(anyhow::anyhow!("Network error")) };
+
+        let result =
+            synchronize_titles_with_history(&todo_items, &github_issues, events_fetcher).await;
+
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("Network error"));
     }
 
     #[test]
