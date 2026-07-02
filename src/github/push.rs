@@ -1,11 +1,84 @@
 use crate::github::issues::{GitHubIssue, IssueState};
 use crate::todo::TodoItem;
 use anyhow::Result;
+use std::collections::HashMap;
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum GitHubOperation {
     CreateIssue { title: String },
     CloseIssue { number: u64 },
+    RenameIssue { number: u64, title: String },
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct TitleUpdates {
+    pub operations: Vec<(TodoItem, GitHubOperation)>,
+    pub stale_issues: Vec<u64>,
+}
+
+pub async fn calculate_title_updates_with_history<F, Fut>(
+    todo_items: &[TodoItem],
+    github_issues: &[GitHubIssue],
+    events_fetcher: F,
+) -> Result<TitleUpdates>
+where
+    F: Fn(u64) -> Fut,
+    Fut: std::future::Future<Output = Result<Vec<serde_json::Value>>>,
+{
+    let past_titles =
+        crate::github::title::collect_past_titles(todo_items, github_issues, events_fetcher)
+            .await?;
+
+    Ok(calculate_title_updates(
+        todo_items,
+        github_issues,
+        &past_titles,
+    ))
+}
+
+fn calculate_title_updates(
+    todo_items: &[TodoItem],
+    github_issues: &[GitHubIssue],
+    past_titles: &HashMap<u64, Vec<String>>,
+) -> TitleUpdates {
+    let github_issues_map: HashMap<u64, &GitHubIssue> = github_issues
+        .iter()
+        .map(|issue| (issue.number, issue))
+        .collect();
+
+    let mut operations = Vec::new();
+    let mut stale_issues = Vec::new();
+
+    for todo_item in todo_items {
+        let renamed_issue = todo_item
+            .issue_number
+            .and_then(|issue_number| github_issues_map.get(&issue_number))
+            .filter(|github_issue| matches!(github_issue.state, IssueState::Open))
+            .filter(|github_issue| todo_item.text.trim() != github_issue.title.trim());
+
+        if let Some(github_issue) = renamed_issue {
+            if crate::github::title::matches_past_title(
+                past_titles,
+                github_issue.number,
+                &todo_item.text,
+            ) {
+                stale_issues.push(github_issue.number);
+            } else {
+                operations.push((
+                    todo_item.clone(),
+                    GitHubOperation::RenameIssue {
+                        number: github_issue.number,
+                        title: todo_item.text.trim().to_string(),
+                    },
+                ));
+            }
+        }
+    }
+
+    TitleUpdates {
+        operations,
+        stale_issues,
+    }
 }
 
 pub fn calculate_github_operations(
@@ -54,6 +127,7 @@ where
                 issue_closer(*number)?;
                 Ok((todo_item.clone(), None))
             }
+            GitHubOperation::RenameIssue { .. } => Ok((todo_item.clone(), None)),
         })
         .collect()
 }
@@ -195,6 +269,216 @@ mod tests {
         assert_eq!(updates.len(), 1);
         assert_eq!(updates[0].0.text, "New task");
         assert_eq!(updates[0].1, Some(789));
+    }
+
+    #[test]
+    fn test_calculate_title_updates_renames_locally_edited_title() {
+        let todo_items = vec![TodoItem {
+            text: "Locally edited title".to_string(),
+            is_checked: false,
+            issue_number: Some(123),
+        }];
+        let github_issues = vec![GitHubIssue {
+            number: 123,
+            title: "Original title".to_string(),
+            state: IssueState::Open,
+        }];
+        let past_titles = HashMap::from([(123u64, vec![])]);
+
+        let updates = calculate_title_updates(&todo_items, &github_issues, &past_titles);
+
+        assert_eq!(
+            updates,
+            TitleUpdates {
+                operations: vec![(
+                    todo_items[0].clone(),
+                    GitHubOperation::RenameIssue {
+                        number: 123,
+                        title: "Locally edited title".to_string(),
+                    },
+                )],
+                stale_issues: vec![],
+            }
+        );
+    }
+
+    #[test]
+    fn test_calculate_title_updates_skips_stale_local_text() {
+        let todo_items = vec![TodoItem {
+            text: "Old title".to_string(),
+            is_checked: false,
+            issue_number: Some(123),
+        }];
+        let github_issues = vec![GitHubIssue {
+            number: 123,
+            title: "New title".to_string(),
+            state: IssueState::Open,
+        }];
+        let past_titles = HashMap::from([(123u64, vec!["Old title".to_string()])]);
+
+        let updates = calculate_title_updates(&todo_items, &github_issues, &past_titles);
+
+        assert_eq!(
+            updates,
+            TitleUpdates {
+                operations: vec![],
+                stale_issues: vec![123],
+            }
+        );
+    }
+
+    #[test]
+    fn test_calculate_title_updates_ignores_synced_closed_and_unnumbered_items() {
+        let todo_items = vec![
+            TodoItem {
+                text: "Same title".to_string(),
+                is_checked: false,
+                issue_number: Some(123),
+            },
+            TodoItem {
+                text: "Edited closed title".to_string(),
+                is_checked: true,
+                issue_number: Some(456),
+            },
+            TodoItem {
+                text: "Local task".to_string(),
+                is_checked: false,
+                issue_number: None,
+            },
+        ];
+        let github_issues = vec![
+            GitHubIssue {
+                number: 123,
+                title: "Same title".to_string(),
+                state: IssueState::Open,
+            },
+            GitHubIssue {
+                number: 456,
+                title: "Closed title".to_string(),
+                state: IssueState::Closed,
+            },
+        ];
+        let past_titles = HashMap::new();
+
+        let updates = calculate_title_updates(&todo_items, &github_issues, &past_titles);
+
+        assert_eq!(
+            updates,
+            TitleUpdates {
+                operations: vec![],
+                stale_issues: vec![],
+            }
+        );
+    }
+
+    #[test]
+    fn test_calculate_title_updates_trims_title_for_rename() {
+        let todo_items = vec![TodoItem {
+            text: "  Edited title  ".to_string(),
+            is_checked: false,
+            issue_number: Some(123),
+        }];
+        let github_issues = vec![GitHubIssue {
+            number: 123,
+            title: "Original title".to_string(),
+            state: IssueState::Open,
+        }];
+        let past_titles = HashMap::new();
+
+        let updates = calculate_title_updates(&todo_items, &github_issues, &past_titles);
+
+        assert_eq!(
+            updates.operations,
+            vec![(
+                todo_items[0].clone(),
+                GitHubOperation::RenameIssue {
+                    number: 123,
+                    title: "Edited title".to_string(),
+                },
+            )]
+        );
+    }
+
+    #[tokio::test]
+    async fn test_calculate_title_updates_with_history_resolves_by_rename_history() {
+        let todo_items = vec![
+            TodoItem {
+                text: "Locally edited title".to_string(),
+                is_checked: false,
+                issue_number: Some(123),
+            },
+            TodoItem {
+                text: "Old title".to_string(),
+                is_checked: false,
+                issue_number: Some(456),
+            },
+        ];
+        let github_issues = vec![
+            GitHubIssue {
+                number: 123,
+                title: "Original title".to_string(),
+                state: IssueState::Open,
+            },
+            GitHubIssue {
+                number: 456,
+                title: "New title".to_string(),
+                state: IssueState::Open,
+            },
+        ];
+        let events_fetcher = |issue_number: u64| async move {
+            match issue_number {
+                123 => Ok(vec![]),
+                456 => Ok(vec![serde_json::json!({
+                    "event": "renamed",
+                    "rename": {"from": "Old title", "to": "New title"}
+                })]),
+                _ => Err(anyhow::anyhow!(
+                    "history should not be fetched for issue #{issue_number}"
+                )),
+            }
+        };
+
+        let result =
+            calculate_title_updates_with_history(&todo_items, &github_issues, events_fetcher).await;
+
+        assert!(result.is_ok());
+        let updates = result.unwrap();
+        assert_eq!(
+            updates.operations,
+            vec![(
+                todo_items[0].clone(),
+                GitHubOperation::RenameIssue {
+                    number: 123,
+                    title: "Locally edited title".to_string(),
+                },
+            )]
+        );
+        assert_eq!(updates.stale_issues, vec![456]);
+    }
+
+    #[test]
+    fn test_rename_issue_operation_updates_nothing_in_todo() {
+        let todo_item = TodoItem {
+            text: "Edited title".to_string(),
+            is_checked: false,
+            issue_number: Some(123),
+        };
+        let github_operations = vec![(
+            todo_item.clone(),
+            GitHubOperation::RenameIssue {
+                number: 123,
+                title: "Edited title".to_string(),
+            },
+        )];
+
+        let mock_creator = |_title: &str| -> Result<u64> { panic!("creator should not be called") };
+        let mock_closer = |_number: u64| -> Result<()> { panic!("closer should not be called") };
+
+        let updates =
+            calculate_todo_updates(&github_operations, mock_creator, mock_closer).unwrap();
+
+        assert_eq!(updates.len(), 1);
+        assert_eq!(updates[0].1, None);
     }
 
     #[test]
