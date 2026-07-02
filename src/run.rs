@@ -231,7 +231,25 @@ pub async fn run(
 
             let github_issues = fetch_github_issues_async(&client, repo, &token).await?;
 
-            let operations = github::push::calculate_github_operations(&todo_items, &github_issues);
+            let title_updates = github::push::calculate_title_updates_with_history(
+                &todo_items,
+                &github_issues,
+                |issue_number| fetch_issue_events_async(&client, repo, issue_number, &token),
+            )
+            .await?;
+
+            for issue_number in title_updates.stale_issues {
+                output::println(
+                    &format!(
+                        "Warning: issue #{issue_number} was renamed on GitHub; run `atat pull` to update TODO.md"
+                    ),
+                    &mut stdout_additional,
+                )?;
+            }
+
+            let operations = title_updates.operations.into_iter().chain(
+                github::push::calculate_github_operations(&todo_items, &github_issues),
+            );
 
             let mut results = Vec::new();
 
@@ -247,6 +265,11 @@ pub async fn run(
                             .await
                             .map(|_| (todo_item.clone(), None))
                     }
+                    github::push::GitHubOperation::RenameIssue { number, title } => {
+                        rename_github_issue(&client, repo, *number, title, &token)
+                            .await
+                            .map(|_| (todo_item.clone(), None))
+                    }
                 };
 
                 match (&result, &operation) {
@@ -259,6 +282,15 @@ pub async fn run(
                     (Ok((_, None)), github::push::GitHubOperation::CloseIssue { number }) => {
                         output::println(
                             &format!("Closed issue #{number}"),
+                            &mut stdout_additional,
+                        )?;
+                    }
+                    (
+                        Ok((_, None)),
+                        github::push::GitHubOperation::RenameIssue { number, title },
+                    ) => {
+                        output::println(
+                            &format!("Renamed issue #{number}: {title}"),
                             &mut stdout_additional,
                         )?;
                     }
@@ -653,6 +685,43 @@ async fn create_github_issue(
 
     let create_response: CreateIssueResponse = response.json().await?;
     Ok(create_response.number)
+}
+
+async fn rename_github_issue(
+    client: &reqwest::Client,
+    repo: &str,
+    issue_number: u64,
+    title: &str,
+    token: &str,
+) -> anyhow::Result<()> {
+    let url = format!("{}/{}/issues/{}", endpoints::ISSUES, repo, issue_number);
+
+    #[derive(serde::Serialize)]
+    struct UpdateIssueRequest {
+        title: String,
+    }
+
+    let request = UpdateIssueRequest {
+        title: title.to_string(),
+    };
+
+    let response = client
+        .patch(&url)
+        .bearer_auth(token)
+        .header("Accept", "application/vnd.github.v3+json")
+        .header("User-Agent", "atat-cli")
+        .json(&request)
+        .send()
+        .await?;
+
+    if !response.status().is_success() {
+        return Err(anyhow::anyhow!(
+            "Failed to rename issue: HTTP {}",
+            response.status()
+        ));
+    }
+
+    Ok(())
 }
 
 async fn close_github_issue(

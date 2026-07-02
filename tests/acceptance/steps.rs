@@ -895,6 +895,81 @@ async fn given_github_issue_exists(world: &mut AtatWorld, issue_number: u64, tit
     }
 }
 
+#[then(regex = r#"^GitHub issue #(\d+) should have title "(.+)"$"#)]
+async fn then_github_issue_should_have_title(
+    world: &mut AtatWorld,
+    issue_number: u64,
+    expected_title: String,
+) {
+    let home_dir = std::env::var("HOME").expect("HOME environment variable not set");
+    let token_path = std::path::PathBuf::from(home_dir)
+        .join(".atat")
+        .join("token");
+    let token = std::fs::read_to_string(&token_path)
+        .expect("Failed to read GitHub token for tests")
+        .trim()
+        .to_string();
+
+    let repo =
+        std::env::var("TEST_GITHUB_REPO").unwrap_or_else(|_| "toms74209200/atat-test".to_string());
+    let client = reqwest::Client::new();
+
+    let actual_issue_number = world
+        .issue_number_mapping
+        .get(&issue_number)
+        .copied()
+        .expect(&format!(
+            "Issue number #{} not found in mapping. Available mappings: {:?}",
+            issue_number, world.issue_number_mapping
+        ));
+
+    let issue_url = format!(
+        "https://api.github.com/repos/{}/issues/{}",
+        repo, actual_issue_number
+    );
+
+    let mut actual_title = String::new();
+    let mut delay = 100;
+    let max_attempts = 5;
+    for attempt in 1..=max_attempts {
+        let response = client
+            .get(&issue_url)
+            .bearer_auth(&token)
+            .header("Accept", "application/vnd.github.v3+json")
+            .header("User-Agent", "atat-cli")
+            .send()
+            .await
+            .expect("Failed to fetch issue for title assertion");
+
+        assert!(
+            response.status().is_success(),
+            "Issue #{} should exist on GitHub",
+            actual_issue_number
+        );
+
+        let issue: serde_json::Value = response
+            .json()
+            .await
+            .expect("Failed to parse issue response");
+        actual_title = issue["title"].as_str().unwrap_or_default().to_string();
+
+        if actual_title == expected_title {
+            break;
+        }
+
+        if attempt < max_attempts {
+            tokio::time::sleep(std::time::Duration::from_millis(delay)).await;
+            delay *= 2;
+        }
+    }
+
+    assert_eq!(
+        actual_title, expected_title,
+        "Issue #{} should have title '{}' but has '{}'",
+        actual_issue_number, expected_title, actual_title
+    );
+}
+
 #[given(regex = r#"^GitHub issue #(\d+) is renamed to "(.+)"$"#)]
 async fn given_github_issue_is_renamed(
     world: &mut AtatWorld,

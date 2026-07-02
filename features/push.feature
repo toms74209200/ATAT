@@ -24,6 +24,33 @@ Feature: Push TODO.md items to GitHub Issues
     When I run `atat push`
     Then the created issue should be closed
 
+  Scenario: Rename issue when TODO item text is edited locally
+    Given the user is logged in via GitHub App for tests
+    And the config file content is '{"repositories":["toms74209200/atat-test"]}'
+    And the TODO.md file contains:
+      """
+      - [ ] Edited task title (#222)
+      """
+    And GitHub issue #222 with title "Original task title"
+    And I update TODO.md to use the actual issue number
+    When I run `atat push`
+    Then GitHub issue #222 should have title "Edited task title"
+    And cleanup remaining open issues
+
+  Scenario: Do not rename issue back when it was renamed on GitHub
+    Given the user is logged in via GitHub App for tests
+    And the config file content is '{"repositories":["toms74209200/atat-test"]}'
+    And the TODO.md file contains:
+      """
+      - [ ] Old task title (#222)
+      """
+    And GitHub issue #222 with title "Old task title"
+    And I update TODO.md to use the actual issue number
+    And GitHub issue #222 is renamed to "New task title"
+    When I run `atat push`
+    Then GitHub issue #222 should have title "New task title"
+    And cleanup remaining open issues
+
   Scenario: Error when not logged in
     Given the user is not logged in
     And the config file content is '{"repositories":["toms74209200/atat-test"]}'
