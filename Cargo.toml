@@ -14,7 +14,7 @@ tokio = { version = "1.49.0", features = ["full"] }
 [dev-dependencies]
 cucumber = "0.23.0"
 regex = "1.12.3"
-jsonwebtoken = { version = "10", features = ["rust_crypto"] }
+jsonwebtoken = { version = "11", features = ["rust_crypto"] }
 chrono = { version = "0.4", features = ["serde"] }
 
 [[test]]
